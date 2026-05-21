@@ -24,10 +24,9 @@ func NewRouter(deps Deps) http.Handler {
 	r.Use(mw.Recover(deps.Logger))
 	r.Use(mw.CORS)
 
-	r.Get("/healthz", deps.HealthHandler.Liveness)
-	r.Get("/readyz", deps.HealthHandler.Readiness)
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/ping", deps.HealthHandler.Ping)
 
-	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/feedbacks", func(r chi.Router) {
 			r.Post("/requests", deps.FeedbackHandler.CreateRequest)
 		})

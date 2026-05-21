@@ -49,7 +49,7 @@ func main() {
 	feedbackService := service.NewFeedbackService(feedbackRepo, log)
 	v := validator.New()
 
-	healthHandler := handler.NewHealthHandler(pool)
+	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
