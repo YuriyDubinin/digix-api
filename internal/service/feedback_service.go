@@ -13,17 +13,21 @@ import (
 	"github.com/YuriyDubinin/digix-api/internal/domain"
 )
 
+const notifyTimeout = 10 * time.Second
+
 type FeedbackService struct {
-	repo   domain.FeedbackRepository
-	logger *slog.Logger
-	clock  func() time.Time
+	repo     domain.FeedbackRepository
+	notifier domain.FeedbackNotifier
+	logger   *slog.Logger
+	clock    func() time.Time
 }
 
-func NewFeedbackService(repo domain.FeedbackRepository, logger *slog.Logger) *FeedbackService {
+func NewFeedbackService(repo domain.FeedbackRepository, notifier domain.FeedbackNotifier, logger *slog.Logger) *FeedbackService {
 	return &FeedbackService{
-		repo:   repo,
-		logger: logger,
-		clock:  time.Now,
+		repo:     repo,
+		notifier: notifier,
+		logger:   logger,
+		clock:    time.Now,
 	}
 }
 
@@ -53,11 +57,31 @@ func (s *FeedbackService) CreateFeedback(ctx context.Context, input CreateFeedba
 
 	s.logger.Info("feedback created", "feedback_id", f.ID)
 
+	// Уведомление в Telegram уходит асинхронно: недоступность бота не должна
+	// ломать создание заявки. Контекст у горутины свой — он переживёт возврат
+	// HTTP-ответа клиенту.
+	s.notifyAsync(*f)
+
 	return &CreateFeedbackOutput{
 		ID:        f.ID,
 		Status:    string(f.Status),
 		CreatedAt: f.CreatedAt,
 	}, nil
+}
+
+func (s *FeedbackService) notifyAsync(f domain.FeedbackRequest) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+		defer cancel()
+		if err := s.notifier.NotifyNewFeedback(ctx, &f); err != nil {
+			s.logger.Error("notify feedback",
+				"err", err,
+				"feedback_id", f.ID,
+			)
+			return
+		}
+		s.logger.Info("feedback notification sent", "feedback_id", f.ID)
+	}()
 }
 
 func normalizeCreateInput(in CreateFeedbackInput) CreateFeedbackInput {

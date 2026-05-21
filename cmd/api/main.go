@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/YuriyDubinin/digix-api/internal/config"
+	"github.com/YuriyDubinin/digix-api/internal/notifier/telegram"
 	"github.com/YuriyDubinin/digix-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/digix-api/internal/service"
 	transporthttp "github.com/YuriyDubinin/digix-api/internal/transport/http"
@@ -46,7 +47,8 @@ func main() {
 	}
 
 	feedbackRepo := postgres.NewFeedbackRepository(pool)
-	feedbackService := service.NewFeedbackService(feedbackRepo, log)
+	telegramNotifier := telegram.NewClient(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
+	feedbackService := service.NewFeedbackService(feedbackRepo, telegramNotifier, log)
 	v := validator.New()
 
 	healthHandler := handler.NewHealthHandler()

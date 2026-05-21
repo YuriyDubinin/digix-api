@@ -33,12 +33,27 @@ func (m *mockRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.FeedbackR
 	return nil, domain.ErrNotFound
 }
 
+type mockNotifier struct {
+	notifyFn func(ctx context.Context, f *domain.FeedbackRequest) error
+}
+
+func (m *mockNotifier) NotifyNewFeedback(ctx context.Context, f *domain.FeedbackRequest) error {
+	if m.notifyFn != nil {
+		return m.notifyFn(ctx, f)
+	}
+	return nil
+}
+
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 func newServiceWithClock(repo domain.FeedbackRepository, now time.Time) *FeedbackService {
-	s := NewFeedbackService(repo, quietLogger())
+	return newServiceFull(repo, &mockNotifier{}, now)
+}
+
+func newServiceFull(repo domain.FeedbackRepository, notifier domain.FeedbackNotifier, now time.Time) *FeedbackService {
+	s := NewFeedbackService(repo, notifier, quietLogger())
 	s.clock = func() time.Time { return now }
 	return s
 }
@@ -204,10 +219,73 @@ func TestCreateFeedback_RepoErrorPropagates(t *testing.T) {
 			return repoErr
 		},
 	}
-	svc := newServiceWithClock(repo, time.Now())
+	notifier := &mockNotifier{
+		notifyFn: func(_ context.Context, _ *domain.FeedbackRequest) error {
+			t.Error("notifier should not be called when repo fails")
+			return nil
+		},
+	}
+	svc := newServiceFull(repo, notifier, time.Now())
 
 	_, err := svc.CreateFeedback(context.Background(), validInput())
 	if !errors.Is(err, repoErr) {
 		t.Fatalf("expected repo error, got %v", err)
+	}
+}
+
+func TestCreateFeedback_NotifierCalledOnSuccess(t *testing.T) {
+	notified := make(chan *domain.FeedbackRequest, 1)
+	notifier := &mockNotifier{
+		notifyFn: func(_ context.Context, f *domain.FeedbackRequest) error {
+			notified <- f
+			return nil
+		},
+	}
+	repo := &mockRepo{}
+	svc := newServiceFull(repo, notifier, time.Now())
+
+	out, err := svc.CreateFeedback(context.Background(), validInput())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	select {
+	case f := <-notified:
+		if f.ID != out.ID {
+			t.Errorf("notifier got ID %v, want %v", f.ID, out.ID)
+		}
+		if f.Email != "john@example.com" {
+			t.Errorf("notifier got Email %q, want trimmed/lowered", f.Email)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notifier was not called within 1s")
+	}
+}
+
+func TestCreateFeedback_NotifierErrorDoesNotFail(t *testing.T) {
+	notifyErr := errors.New("telegram unavailable")
+	notified := make(chan struct{}, 1)
+	notifier := &mockNotifier{
+		notifyFn: func(_ context.Context, _ *domain.FeedbackRequest) error {
+			notified <- struct{}{}
+			return notifyErr
+		},
+	}
+	repo := &mockRepo{}
+	svc := newServiceFull(repo, notifier, time.Now())
+
+	out, err := svc.CreateFeedback(context.Background(), validInput())
+	if err != nil {
+		t.Fatalf("expected success even when notifier fails, got %v", err)
+	}
+	if out == nil || out.ID == uuid.Nil {
+		t.Fatal("expected non-nil output with valid ID")
+	}
+
+	select {
+	case <-notified:
+		// нотификатор был вызван — ок
+	case <-time.After(time.Second):
+		t.Fatal("notifier was not called within 1s")
 	}
 }

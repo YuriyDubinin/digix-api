@@ -18,6 +18,7 @@ type Config struct {
 	HTTP     HTTPConfig
 	Postgres PostgresConfig
 	Log      LogConfig
+	Telegram TelegramConfig
 }
 
 type AppConfig struct {
@@ -45,6 +46,11 @@ type LogConfig struct {
 	Level string
 }
 
+type TelegramConfig struct {
+	BotToken string
+	ChatID   string
+}
+
 func Load() (*Config, error) {
 	// .env — опционально (например, для локальной разработки).
 	// Отсутствие файла не ошибка; ошибки парсинга прокидываем дальше.
@@ -69,6 +75,10 @@ func Load() (*Config, error) {
 		},
 		Log: LogConfig{
 			Level: getString("LOG_LEVEL", "info"),
+		},
+		Telegram: TelegramConfig{
+			BotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+			ChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 		},
 	}
 
@@ -103,6 +113,12 @@ func (c *Config) validate() error {
 	}
 	if c.Postgres.Database == "" {
 		missing = append(missing, "POSTGRES_DB")
+	}
+	if c.Telegram.BotToken == "" {
+		missing = append(missing, "TELEGRAM_BOT_TOKEN")
+	}
+	if c.Telegram.ChatID == "" {
+		missing = append(missing, "TELEGRAM_CHAT_ID")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
