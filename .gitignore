@@ -81,6 +81,9 @@ ehthumbs.db
 *.swo
 *~
 
+# Claude directory
+.claude/
+
 # Debug binary (если собираешь локально)
 debug
 __debug_bin
