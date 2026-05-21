@@ -1,11 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/YuriyDubinin/digix-api/internal/config"
+	"github.com/YuriyDubinin/digix-api/internal/repository/postgres"
+	"github.com/YuriyDubinin/digix-api/internal/service"
+	transporthttp "github.com/YuriyDubinin/digix-api/internal/transport/http"
+	"github.com/YuriyDubinin/digix-api/internal/transport/http/handler"
 	"github.com/YuriyDubinin/digix-api/pkg/logger"
+	"github.com/YuriyDubinin/digix-api/pkg/validator"
 )
 
 func main() {
@@ -20,6 +28,44 @@ func main() {
 		"env", cfg.App.Env,
 		"http_port", cfg.HTTP.Port,
 	)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	pool, err := postgres.NewPool(ctx, cfg.Postgres.DSN(), cfg.Postgres.MaxConns)
+	if err != nil {
+		log.Error("connect to database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	log.Info("database connected")
+
+	if err := postgres.RunMigrations(cfg.Postgres.DSN(), "migrations", log); err != nil {
+		log.Error("run migrations", "err", err)
+		os.Exit(1)
+	}
+
+	feedbackRepo := postgres.NewFeedbackRepository(pool)
+	feedbackService := service.NewFeedbackService(feedbackRepo, log)
+	v := validator.New()
+
+	healthHandler := handler.NewHealthHandler(pool)
+	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
+
+	router := transporthttp.NewRouter(transporthttp.Deps{
+		Logger:          log,
+		HealthHandler:   healthHandler,
+		FeedbackHandler: feedbackHandler,
+	})
+	srv := transporthttp.NewServer(cfg.HTTP, router, log)
+
+	log.Info("http server starting on :" + cfg.HTTP.Port)
+	log.Info("ready")
+
+	if err := srv.Run(ctx); err != nil {
+		log.Error("http server", "err", err)
+		os.Exit(1)
+	}
 
 	log.Info("service stopped")
 }

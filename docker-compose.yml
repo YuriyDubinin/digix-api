@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: api
+    restart: unless-stopped
+    environment:
+      ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      HTTP_READ_TIMEOUT: 10s
+      HTTP_WRITE_TIMEOUT: 10s
+      HTTP_SHUTDOWN_TIMEOUT: 15s
+      POSTGRES_HOST: host.docker.internal
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: my_user
+      POSTGRES_PASSWORD: my_pass
+      POSTGRES_DB: my_db
+      POSTGRES_SSL_MODE: disable
+      POSTGRES_MAX_CONNS: "10"
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
