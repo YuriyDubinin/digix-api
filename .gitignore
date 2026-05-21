@@ -1,0 +1,86 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build artifacts
+/bin
+/dist
+/build
+/main
+/app
+/*.exe
+
+# IDE - IntelliJ / GoLand / Goland / IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+.idea_modules/
+.DS_Store
+
+# VS Code (на случай если открываешь в нём)
+.vscode/
+*.code-workspace
+
+# Mac / Linux system files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.cert
+*.secret
+
+# Testing / coverage
+*.cover
+*.coverprofile
+coverage.out
+coverage.html
+*.test
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS specific
+.idea/
+.idea_modules/
+.DS_Store
+Thumbs.db
+ehthumbs.db
+*.swp
+*.swo
+*~
+
+# Debug binary (если собираешь локально)
+debug
+__debug_bin
