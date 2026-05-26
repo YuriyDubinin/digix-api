@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
 )
 
 type Config struct {
@@ -19,6 +21,7 @@ type Config struct {
 	Postgres PostgresConfig
 	Log      LogConfig
 	Telegram TelegramConfig
+	Auth     AuthConfig
 }
 
 type AppConfig struct {
@@ -51,6 +54,19 @@ type TelegramConfig struct {
 	ChatID   string
 }
 
+// AuthConfig — параметры для крипто-помощников из pkg/crypto.
+//
+//   - TokenSecret — секрет для HMAC-подписи signed-токенов (>= 32 символов).
+//     Подписывает токены с payload: ссылки подтверждения email, сброса пароля и т.п.
+//     НЕ используется для основного auth-токена сессии (тот opaque).
+//
+//   - PasswordHashCost — bcrypt cost factor для хэширования паролей.
+//     Дефолт DefaultPasswordCost (12) — ~250ms на современной машине.
+type AuthConfig struct {
+	TokenSecret      string
+	PasswordHashCost int
+}
+
 func Load() (*Config, error) {
 	// .env — опционально (например, для локальной разработки).
 	// Отсутствие файла не ошибка; ошибки парсинга прокидываем дальше.
@@ -80,6 +96,9 @@ func Load() (*Config, error) {
 			BotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 			ChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 		},
+		Auth: AuthConfig{
+			TokenSecret: os.Getenv("AUTH_TOKEN_SECRET"),
+		},
 	}
 
 	var err error
@@ -93,6 +112,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.Postgres.MaxConns, err = getInt32("POSTGRES_MAX_CONNS", 10); err != nil {
+		return nil, err
+	}
+	if cfg.Auth.PasswordHashCost, err = getInt("PASSWORD_HASH_COST", crypto.DefaultPasswordCost); err != nil {
 		return nil, err
 	}
 
@@ -120,11 +142,20 @@ func (c *Config) validate() error {
 	if c.Telegram.ChatID == "" {
 		missing = append(missing, "TELEGRAM_CHAT_ID")
 	}
+	if c.Auth.TokenSecret == "" {
+		missing = append(missing, "AUTH_TOKEN_SECRET")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 	if c.Postgres.MaxConns <= 0 {
 		return errors.New("POSTGRES_MAX_CONNS must be > 0")
+	}
+	if len(c.Auth.TokenSecret) < crypto.MinTokenSecretLength {
+		return fmt.Errorf("AUTH_TOKEN_SECRET must be at least %d characters", crypto.MinTokenSecretLength)
+	}
+	if c.Auth.PasswordHashCost < crypto.MinPasswordCost || c.Auth.PasswordHashCost > crypto.MaxPasswordCost {
+		return fmt.Errorf("PASSWORD_HASH_COST must be in [%d, %d]", crypto.MinPasswordCost, crypto.MaxPasswordCost)
 	}
 	return nil
 }
@@ -171,4 +202,16 @@ func getInt32(key string, def int32) (int32, error) {
 		return 0, fmt.Errorf("invalid %s=%q: %w", key, raw, err)
 	}
 	return int32(v), nil
+}
+
+func getInt(key string, def int) (int, error) {
+	raw, ok := os.LookupEnv(key)
+	if !ok || raw == "" {
+		return def, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s=%q: %w", key, raw, err)
+	}
+	return v, nil
 }

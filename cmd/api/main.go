@@ -47,17 +47,25 @@ func main() {
 	}
 
 	feedbackRepo := postgres.NewFeedbackRepository(pool)
+	authTokenRepo := postgres.NewAuthTokenRepository(pool)
+
 	telegramNotifier := telegram.NewClient(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
+
 	feedbackService := service.NewFeedbackService(feedbackRepo, telegramNotifier, log)
+	authService := service.NewAuthService(authTokenRepo, log)
+
 	v := validator.New()
 
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
+	meHandler := handler.NewMeHandler()
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
 		Logger:          log,
+		Authenticator:   authService,
 		HealthHandler:   healthHandler,
 		FeedbackHandler: feedbackHandler,
+		MeHandler:       meHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)
 
