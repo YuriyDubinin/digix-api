@@ -6,11 +6,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/YuriyDubinin/dijex-api/internal/config"
 	"github.com/YuriyDubinin/dijex-api/internal/notifier/telegram"
 	"github.com/YuriyDubinin/dijex-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
+	"github.com/YuriyDubinin/dijex-api/internal/sysinfo"
 	transporthttp "github.com/YuriyDubinin/dijex-api/internal/transport/http"
 	"github.com/YuriyDubinin/dijex-api/internal/transport/http/handler"
 	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
@@ -18,7 +20,14 @@ import (
 	"github.com/YuriyDubinin/dijex-api/pkg/validator"
 )
 
+// appVersion — резерв для билд-флага: можно задавать через
+//   go build -ldflags "-X main.appVersion=..."
+// Сейчас по умолчанию — из VCS info через runtime/debug.
+var appVersion = "0.1.0"
+
 func main() {
+	startedAt := time.Now().UTC()
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
@@ -68,10 +77,19 @@ func main() {
 
 	v := validator.New()
 
+	systemCollector := sysinfo.NewCollector(sysinfo.AppMeta{
+		Name:      "dijex-api",
+		Env:       cfg.App.Env,
+		Version:   appVersion,
+		StartedAt: startedAt,
+		HTTPPort:  cfg.HTTP.Port,
+	}, pool)
+
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
 	authHandler := handler.NewAuthHandler(authService, v, log)
 	meHandler := handler.NewMeHandler()
+	systemHandler := handler.NewSystemHandler(systemCollector, log)
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
 		Logger:          log,
@@ -80,6 +98,7 @@ func main() {
 		FeedbackHandler: feedbackHandler,
 		AuthHandler:     authHandler,
 		MeHandler:       meHandler,
+		SystemHandler:   systemHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)
 

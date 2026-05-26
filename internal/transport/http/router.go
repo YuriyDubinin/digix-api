@@ -18,6 +18,7 @@ type Deps struct {
 	FeedbackHandler *handler.FeedbackHandler
 	AuthHandler     *handler.AuthHandler
 	MeHandler       *handler.MeHandler
+	SystemHandler   *handler.SystemHandler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -52,6 +53,9 @@ func NewRouter(deps Deps) http.Handler {
 			r.Use(mw.Auth(deps.Authenticator, deps.Logger))
 
 			r.Get("/me", deps.MeHandler.Get)
+
+			// Полный снимок состояния машины для админ-консоли (вкладка Core).
+			r.Get("/system", deps.SystemHandler.Get)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом
