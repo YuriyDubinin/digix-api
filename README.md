@@ -7,7 +7,11 @@ docker build --platform linux/amd64 -t yuriydubinin100/dijex-api:1.0.0 .
 
 ## Запуск
 ```
-docker run -d --name yuriydubinin100/dijex-api:1.0.0 --env-file .env -p 18080:8080 dijex-api
+docker run -d \
+  --name dijex-api \
+  --env-file .env \
+  -p 18080:8080 \
+  yuriydubinin100/dijex-api:1.0.0
 ```
 
 ## Деплой
