@@ -127,3 +127,20 @@ func (r *AuthTokenRepository) TouchLastUsed(ctx context.Context, id uuid.UUID, n
 	}
 	return nil
 }
+
+// Revoke помечает токен отозванным. Условие `revoked_at IS NULL` защищает
+// от затирания истории: если токен уже был отозван (например, триггером
+// revoke_tokens_on_employee_disable), повторный вызов ничего не меняет.
+func (r *AuthTokenRepository) Revoke(ctx context.Context, id uuid.UUID, reason string, now time.Time) error {
+	const query = `
+		UPDATE auth_tokens
+		SET revoked_at = $1,
+		    revoked_reason = $2
+		WHERE id = $3
+		  AND revoked_at IS NULL
+	`
+	if _, err := r.pool.Exec(ctx, query, now, reason, id); err != nil {
+		return fmt.Errorf("postgres: revoke auth token: %w", err)
+	}
+	return nil
+}

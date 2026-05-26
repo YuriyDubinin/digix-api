@@ -36,17 +36,17 @@ func WriteError(w http.ResponseWriter, status int, code, message string, details
 }
 
 func WriteValidationError(w http.ResponseWriter, message string, details ...FieldError) {
-	WriteError(w, http.StatusUnprocessableEntity, "validation_error", message, details...)
+	WriteError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, details...)
 }
 
 func WriteNotFound(w http.ResponseWriter, message string) {
-	WriteError(w, http.StatusNotFound, "not_found", message)
+	WriteError(w, http.StatusNotFound, "NOT_FOUND", message)
 }
 
 func WriteInternalError(w http.ResponseWriter) {
-	WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+	WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 }
 
 func WriteBadRequest(w http.ResponseWriter, message string) {
-	WriteError(w, http.StatusBadRequest, "bad_request", message)
+	WriteError(w, http.StatusBadRequest, "BAD_REQUEST", message)
 }

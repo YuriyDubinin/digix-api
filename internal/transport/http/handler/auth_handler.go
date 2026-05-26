@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/YuriyDubinin/dijex-api/internal/domain"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
 	"github.com/YuriyDubinin/dijex-api/internal/transport/http/clientinfo"
@@ -16,19 +18,20 @@ import (
 	"github.com/YuriyDubinin/dijex-api/pkg/validator"
 )
 
-// AuthLoginService — узкий контракт, на котором зависит хендлер.
-// Позволяет легко мокать в тестах и не таскает в handler весь AuthService.
-type AuthLoginService interface {
+// AuthService — узкий контракт, на котором зависит хендлер.
+// Позволяет мокать в тестах и не таскает в handler весь *service.AuthService.
+type AuthService interface {
 	Login(ctx context.Context, input service.LoginInput) (*service.LoginOutput, error)
+	Logout(ctx context.Context, tokenID uuid.UUID) error
 }
 
 type AuthHandler struct {
-	service   AuthLoginService
+	service   AuthService
 	validator *validator.Validator
 	logger    *slog.Logger
 }
 
-func NewAuthHandler(svc AuthLoginService, v *validator.Validator, logger *slog.Logger) *AuthHandler {
+func NewAuthHandler(svc AuthService, v *validator.Validator, logger *slog.Logger) *AuthHandler {
 	return &AuthHandler{service: svc, validator: v, logger: logger}
 }
 
@@ -77,6 +80,43 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, dto.FromLoginOutput(out))
+}
+
+// Logout обрабатывает POST /api/auth/logout.
+//
+// Маршрут защищённый — все проверки токена (есть/истёк/отозван/disabled)
+// делает Auth middleware и до handler доходят только валидные токены.
+// Поэтому здесь только сама операция отзыва.
+//
+// Ответы:
+//   - 200 OK         — токен отозван (или уже был отозван — Revoke идемпотентен).
+//   - 500 INTERNAL_ERROR — ошибка БД.
+//   - 401 …          — отдают мидлвари до handler (битый/истёкший/отозванный токен).
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	principal, ok := mw.PrincipalFromContext(r.Context())
+	if !ok {
+		// Сюда не должны попадать: маршрут под Auth middleware.
+		h.logger.Error("logout: principal missing in context",
+			"request_id", mw.RequestIDFromContext(r.Context()),
+		)
+		response.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "principal missing in context")
+		return
+	}
+
+	if err := h.service.Logout(r.Context(), principal.TokenID); err != nil {
+		h.logger.Error("logout",
+			"err", err,
+			"request_id", mw.RequestIDFromContext(r.Context()),
+			"token_id", principal.TokenID,
+		)
+		response.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, map[string]string{
+		"status":  "LOGGED_OUT",
+		"message": "token successfully revoked",
+	})
 }
 
 func toServiceClientInfo(ci clientinfo.ClientInfo) service.ClientInfo {

@@ -31,6 +31,11 @@ type TokenRepository interface {
 	// TouchLastUsed обновляет last_used_at = now для токена.
 	// Best-effort — допускается ошибка, она не должна ломать запрос.
 	TouchLastUsed(ctx context.Context, id uuid.UUID, now time.Time) error
+
+	// Revoke помечает токен отозванным: ставит revoked_at = now и revoked_reason.
+	// Не трогает уже отозванные токены (WHERE revoked_at IS NULL),
+	// чтобы не перетереть исходную причину/время отзыва.
+	Revoke(ctx context.Context, id uuid.UUID, reason string, now time.Time) error
 }
 
 // EmployeeRepository — контракт чтения сотрудников.

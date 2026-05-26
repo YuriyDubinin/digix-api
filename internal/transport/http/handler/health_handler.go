@@ -14,7 +14,7 @@ func NewHealthHandler() *HealthHandler {
 
 func (h *HealthHandler) Ping(w http.ResponseWriter, _ *http.Request) {
 	response.WriteJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
+		"status":  "OK",
 		"message": "API is up and running",
 	})
 }

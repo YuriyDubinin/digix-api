@@ -76,11 +76,15 @@ type AuthTokenWithEmployee struct {
 	EmployeeStatus string
 }
 
-// Principal — идентификатор аутентифицированного пользователя.
+// Principal — идентификатор аутентифицированной сессии.
 // Кладётся в context.Context мидлварью Auth, после чего доступен в любом
 // защищённом хендлере через middleware.PrincipalFromContext.
+//
+// TokenID — id строки в auth_tokens, использованной для данного запроса.
+// Нужен handler'ам, которые работают с самой сессией: logout, ротация и т.п.
 type Principal struct {
 	EmployeeID uuid.UUID
+	TokenID    uuid.UUID
 	Role       string
 	Status     string
 }

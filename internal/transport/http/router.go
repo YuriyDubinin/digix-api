@@ -53,6 +53,11 @@ func NewRouter(deps Deps) http.Handler {
 
 			r.Get("/me", deps.MeHandler.Get)
 
+			// Логaut — защищённый, потому что нельзя «разлогиниться» без
+			// валидного токена. Auth middleware сам отдаст 401 при любом
+			// негативном исходе (нет токена / истёк / уже отозван).
+			r.Post("/auth/logout", deps.AuthHandler.Logout)
+
 			// Сюда же добавляются новые защищённые эндпоинты, например:
 			//   r.Route("/employees", func(r chi.Router) {
 			//       r.Get("/", deps.EmployeeHandler.List)

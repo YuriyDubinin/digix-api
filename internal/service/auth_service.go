@@ -102,9 +102,25 @@ func (s *AuthService) Authenticate(ctx context.Context, rawToken string) (*domai
 
 	return &domain.Principal{
 		EmployeeID: row.Token.EmployeeID,
+		TokenID:    row.Token.ID,
 		Role:       row.EmployeeRole,
 		Status:     row.EmployeeStatus,
 	}, nil
+}
+
+// Logout отзывает токен по его id: ставит revoked_at = now и
+// revoked_reason = "user logout". Принимает id из Principal'а — middleware
+// уже гарантирует, что токен валиден на момент вызова, поэтому здесь
+// никаких дополнительных проверок не делаем.
+//
+// Идемпотентен: повторный вызов на уже отозванный токен — no-op
+// (WHERE revoked_at IS NULL на стороне SQL).
+func (s *AuthService) Logout(ctx context.Context, tokenID uuid.UUID) error {
+	if err := s.tokens.Revoke(ctx, tokenID, "user logout", s.clock()); err != nil {
+		return fmt.Errorf("auth: logout: %w", err)
+	}
+	s.logger.Info("logout", "token_id", tokenID)
+	return nil
 }
 
 // Login проверяет email+пароль и при успехе создаёт новый ACCESS-токен.
