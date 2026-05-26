@@ -13,6 +13,7 @@ import (
 	"github.com/YuriyDubinin/dijex-api/internal/service"
 	transporthttp "github.com/YuriyDubinin/dijex-api/internal/transport/http"
 	"github.com/YuriyDubinin/dijex-api/internal/transport/http/handler"
+	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
 	"github.com/YuriyDubinin/dijex-api/pkg/logger"
 	"github.com/YuriyDubinin/dijex-api/pkg/validator"
 )
@@ -48,16 +49,28 @@ func main() {
 
 	feedbackRepo := postgres.NewFeedbackRepository(pool)
 	authTokenRepo := postgres.NewAuthTokenRepository(pool)
+	employeeRepo := postgres.NewEmployeeRepository(pool)
 
 	telegramNotifier := telegram.NewClient(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
 
+	passwordHasher, err := crypto.NewPasswordHasher(cfg.Auth.PasswordHashCost)
+	if err != nil {
+		log.Error("init password hasher", "err", err)
+		os.Exit(1)
+	}
+
 	feedbackService := service.NewFeedbackService(feedbackRepo, telegramNotifier, log)
-	authService := service.NewAuthService(authTokenRepo, log)
+	authService, err := service.NewAuthService(authTokenRepo, employeeRepo, passwordHasher, cfg.Auth.TokenTTL, log)
+	if err != nil {
+		log.Error("init auth service", "err", err)
+		os.Exit(1)
+	}
 
 	v := validator.New()
 
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
+	authHandler := handler.NewAuthHandler(authService, v, log)
 	meHandler := handler.NewMeHandler()
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
@@ -65,6 +78,7 @@ func main() {
 		Authenticator:   authService,
 		HealthHandler:   healthHandler,
 		FeedbackHandler: feedbackHandler,
+		AuthHandler:     authHandler,
 		MeHandler:       meHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)

@@ -54,7 +54,7 @@ type TelegramConfig struct {
 	ChatID   string
 }
 
-// AuthConfig — параметры для крипто-помощников из pkg/crypto.
+// AuthConfig — параметры авторизации и крипто-помощников из pkg/crypto.
 //
 //   - TokenSecret — секрет для HMAC-подписи signed-токенов (>= 32 символов).
 //     Подписывает токены с payload: ссылки подтверждения email, сброса пароля и т.п.
@@ -62,9 +62,13 @@ type TelegramConfig struct {
 //
 //   - PasswordHashCost — bcrypt cost factor для хэширования паролей.
 //     Дефолт DefaultPasswordCost (12) — ~250ms на современной машине.
+//
+//   - TokenTTL — срок жизни access-токена, выдаваемого при логине.
+//     Дефолт 24h. Когда появится refresh-flow, добавится отдельный RefreshTTL.
 type AuthConfig struct {
 	TokenSecret      string
 	PasswordHashCost int
+	TokenTTL         time.Duration
 }
 
 func Load() (*Config, error) {
@@ -117,6 +121,9 @@ func Load() (*Config, error) {
 	if cfg.Auth.PasswordHashCost, err = getInt("PASSWORD_HASH_COST", crypto.DefaultPasswordCost); err != nil {
 		return nil, err
 	}
+	if cfg.Auth.TokenTTL, err = getDuration("AUTH_TOKEN_TTL", 24*time.Hour); err != nil {
+		return nil, err
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -156,6 +163,9 @@ func (c *Config) validate() error {
 	}
 	if c.Auth.PasswordHashCost < crypto.MinPasswordCost || c.Auth.PasswordHashCost > crypto.MaxPasswordCost {
 		return fmt.Errorf("PASSWORD_HASH_COST must be in [%d, %d]", crypto.MinPasswordCost, crypto.MaxPasswordCost)
+	}
+	if c.Auth.TokenTTL <= 0 {
+		return errors.New("AUTH_TOKEN_TTL must be > 0")
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ type Deps struct {
 	Authenticator   domain.Authenticator
 	HealthHandler   *handler.HealthHandler
 	FeedbackHandler *handler.FeedbackHandler
+	AuthHandler     *handler.AuthHandler
 	MeHandler       *handler.MeHandler
 }
 
@@ -35,6 +36,11 @@ func NewRouter(deps Deps) http.Handler {
 
 		r.Route("/feedbacks", func(r chi.Router) {
 			r.Post("/requests", deps.FeedbackHandler.CreateRequest)
+		})
+
+		// Логин не требует Bearer-токена — это вход в систему.
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/login", deps.AuthHandler.Login)
 		})
 
 		// ──────────────────────── Защищённые роуты ─────────────────────────
