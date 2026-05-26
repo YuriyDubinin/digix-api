@@ -9,14 +9,14 @@ import (
 type FeedbackStatus string
 
 const (
-	FeedbackStatusNew       FeedbackStatus = "new"
-	FeedbackStatusProcessed FeedbackStatus = "processed"
-	FeedbackStatusClosed    FeedbackStatus = "closed"
+	FeedbackStatusNew        FeedbackStatus = "NEW"
+	FeedbackStatusProcessing FeedbackStatus = "PROCESSING"
+	FeedbackStatusClosed     FeedbackStatus = "CLOSED"
 )
 
 func (s FeedbackStatus) IsValid() bool {
 	switch s {
-	case FeedbackStatusNew, FeedbackStatusProcessed, FeedbackStatusClosed:
+	case FeedbackStatusNew, FeedbackStatusProcessing, FeedbackStatusClosed:
 		return true
 	default:
 		return false

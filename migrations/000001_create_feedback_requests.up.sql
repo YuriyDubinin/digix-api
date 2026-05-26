@@ -1,5 +1,11 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+CREATE TYPE feedback_status AS ENUM (
+    'NEW',
+    'PROCESSING',
+    'CLOSED'
+);
+
 CREATE TABLE feedback_requests (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name       VARCHAR(255) NOT NULL,
@@ -7,8 +13,7 @@ CREATE TABLE feedback_requests (
     phone      VARCHAR(50),
     subject    VARCHAR(500),
     message    TEXT NOT NULL,
-    status     VARCHAR(20) NOT NULL DEFAULT 'new'
-        CHECK (status IN ('new', 'processed', 'closed')),
+    status     feedback_status NOT NULL DEFAULT 'NEW',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
