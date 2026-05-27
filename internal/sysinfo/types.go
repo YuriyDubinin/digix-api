@@ -118,8 +118,25 @@ type SwapMemory struct {
 // ───────────────────────────── Disks ─────────────────────────────
 
 type DisksInfo struct {
+	// Usage — сводка по физическому диску сервера (корневая ФС "/").
+	// Отвечает на «сколько всего места и сколько свободно». Внутри контейнера
+	// "/" — это overlay поверх физического диска хоста, поэтому значения
+	// отражают реальный диск сервера, а не RAM.
+	Usage      DiskUsageSummary          `json:"usage"`
 	Partitions []DiskPartition           `json:"partitions"`
 	IOCounters map[string]DiskIOCounters `json:"io_counters,omitempty"`
+}
+
+type DiskUsageSummary struct {
+	Path        string  `json:"path"`
+	Fstype      string  `json:"fstype,omitempty"`
+	TotalBytes  uint64  `json:"total_bytes"`
+	UsedBytes   uint64  `json:"used_bytes"`
+	FreeBytes   uint64  `json:"free_bytes"`
+	UsedPercent float64 `json:"used_percent"`
+	InodesTotal uint64  `json:"inodes_total"`
+	InodesUsed  uint64  `json:"inodes_used"`
+	InodesFree  uint64  `json:"inodes_free"`
 }
 
 type DiskPartition struct {
