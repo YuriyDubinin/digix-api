@@ -47,3 +47,35 @@ type EmployeeRepository interface {
 	// Возвращает ErrNotFound, если сотрудник не найден.
 	FindByEmail(ctx context.Context, email string) (*Employee, error)
 }
+
+// RegistryRepository — контракт хранения подключений к Docker registry.
+type RegistryRepository interface {
+	// Create вставляет registry. При IsDefault=true атомарно снимает флаг
+	// default с прочих записей. Конфликт уникального имени → ErrAlreadyExists.
+	Create(ctx context.Context, r *Registry) error
+
+	// List возвращает срез registry по фильтру + общее число подходящих
+	// записей (для пагинации). Удалённые (soft-delete) не включаются.
+	List(ctx context.Context, filter RegistryListFilter) ([]*Registry, int, error)
+
+	// GetByID находит живой (не удалённый) registry. ErrNotFound, если нет.
+	GetByID(ctx context.Context, id uuid.UUID) (*Registry, error)
+
+	// Update обновляет registry по ID. При IsDefault=true снимает флаг default
+	// с прочих. ErrNotFound, если записи нет; ErrAlreadyExists при конфликте имени.
+	// Поля CreatedAt/UpdatedAt результата заполняются актуальными значениями из БД.
+	Update(ctx context.Context, r *Registry) error
+
+	// SoftDelete помечает registry удалённым (ставит deleted_at = NOW и снимает
+	// is_default). Физически строку не удаляет. Возвращает момент удаления.
+	// ErrNotFound, если записи нет или она уже удалена.
+	SoftDelete(ctx context.Context, id uuid.UUID) (time.Time, error)
+
+	// UpdateConnectionStatus записывает результат проверки подключения:
+	// last_checked_at, last_status и last_error (пустая строка → NULL).
+	// setActive управляет полем is_active:
+	//   nil   — не трогать (например, неуспешный connect не выключает запись);
+	//   true  — включить;
+	//   false — выключить (например, неуспешный ping).
+	UpdateConnectionStatus(ctx context.Context, id uuid.UUID, status, errMsg string, checkedAt time.Time, setActive *bool) error
+}

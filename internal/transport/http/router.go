@@ -21,6 +21,7 @@ type Deps struct {
 	SystemHandler     *handler.SystemHandler
 	ContainersHandler *handler.ContainersHandler
 	ServicesHandler   *handler.ServicesHandler
+	RegistryHandler   *handler.RegistryHandler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -64,6 +65,15 @@ func NewRouter(deps Deps) http.Handler {
 
 			// Список системных сервисов systemd (вкладка Servers).
 			r.Get("/system/services", deps.ServicesHandler.List)
+
+			// Подключения к Docker registry.
+			r.Post("/registries/create", deps.RegistryHandler.Create)
+			r.Get("/registries/list", deps.RegistryHandler.List)
+			r.Put("/registries/update", deps.RegistryHandler.Update)
+			r.Delete("/registries/delete", deps.RegistryHandler.Delete)
+			r.Post("/registries/connect", deps.RegistryHandler.Connect)
+			r.Post("/registries/ping", deps.RegistryHandler.Ping)
+			r.Post("/registries/images", deps.RegistryHandler.Images)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом

@@ -23,6 +23,7 @@ type Config struct {
 	Telegram TelegramConfig
 	Auth     AuthConfig
 	Docker   DockerConfig
+	Registry RegistryConfig
 }
 
 type AppConfig struct {
@@ -81,6 +82,15 @@ type DockerConfig struct {
 	Host string
 }
 
+// RegistryConfig — параметры для работы с подключениями к Docker registry.
+//   - EncryptionKey — секрет для AES-GCM шифрования паролей/токенов registry
+//     (env REGISTRY_ENCRYPTION_KEY). Из него выводится ключ AES-256. Обязателен,
+//     минимум 16 символов. ВНИМАНИЕ: смена ключа сделает сохранённые пароли
+//     нерасшифровываемыми.
+type RegistryConfig struct {
+	EncryptionKey string
+}
+
 func Load() (*Config, error) {
 	// .env — опционально (например, для локальной разработки).
 	// Отсутствие файла не ошибка; ошибки парсинга прокидываем дальше.
@@ -115,6 +125,9 @@ func Load() (*Config, error) {
 		},
 		Docker: DockerConfig{
 			Host: getString("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		},
+		Registry: RegistryConfig{
+			EncryptionKey: os.Getenv("REGISTRY_ENCRYPTION_KEY"),
 		},
 	}
 
@@ -165,6 +178,9 @@ func (c *Config) validate() error {
 	if c.Auth.TokenSecret == "" {
 		missing = append(missing, "AUTH_TOKEN_SECRET")
 	}
+	if c.Registry.EncryptionKey == "" {
+		missing = append(missing, "REGISTRY_ENCRYPTION_KEY")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
@@ -179,6 +195,9 @@ func (c *Config) validate() error {
 	}
 	if c.Auth.TokenTTL <= 0 {
 		return errors.New("AUTH_TOKEN_TTL must be > 0")
+	}
+	if len(c.Registry.EncryptionKey) < crypto.MinCipherSecretLength {
+		return fmt.Errorf("REGISTRY_ENCRYPTION_KEY must be at least %d characters", crypto.MinCipherSecretLength)
 	}
 	return nil
 }

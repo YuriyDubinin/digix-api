@@ -11,6 +11,7 @@ import (
 	"github.com/YuriyDubinin/dijex-api/internal/config"
 	"github.com/YuriyDubinin/dijex-api/internal/docker"
 	"github.com/YuriyDubinin/dijex-api/internal/notifier/telegram"
+	"github.com/YuriyDubinin/dijex-api/internal/registryclient"
 	"github.com/YuriyDubinin/dijex-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
 	"github.com/YuriyDubinin/dijex-api/internal/sysinfo"
@@ -61,6 +62,7 @@ func main() {
 	feedbackRepo := postgres.NewFeedbackRepository(pool)
 	authTokenRepo := postgres.NewAuthTokenRepository(pool)
 	employeeRepo := postgres.NewEmployeeRepository(pool)
+	registryRepo := postgres.NewRegistryRepository(pool)
 
 	telegramNotifier := telegram.NewClient(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
 
@@ -70,12 +72,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	registryCipher, err := crypto.NewCipher(cfg.Registry.EncryptionKey)
+	if err != nil {
+		log.Error("init registry cipher", "err", err)
+		os.Exit(1)
+	}
+
 	feedbackService := service.NewFeedbackService(feedbackRepo, telegramNotifier, log)
 	authService, err := service.NewAuthService(authTokenRepo, employeeRepo, passwordHasher, cfg.Auth.TokenTTL, log)
 	if err != nil {
 		log.Error("init auth service", "err", err)
 		os.Exit(1)
 	}
+	registryChecker := registryclient.NewChecker()
+	registryService := service.NewRegistryService(registryRepo, registryCipher, registryChecker, log)
 
 	v := validator.New()
 
@@ -98,6 +108,7 @@ func main() {
 	systemHandler := handler.NewSystemHandler(systemCollector, log)
 	containersHandler := handler.NewContainersHandler(dockerCollector, log)
 	servicesHandler := handler.NewServicesHandler(servicesCollector, log)
+	registryHandler := handler.NewRegistryHandler(registryService, v, log)
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
 		Logger:            log,
@@ -109,6 +120,7 @@ func main() {
 		SystemHandler:     systemHandler,
 		ContainersHandler: containersHandler,
 		ServicesHandler:   servicesHandler,
+		RegistryHandler:   registryHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)
 
