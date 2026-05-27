@@ -14,6 +14,10 @@ type AppMeta struct {
 	Version   string
 	StartedAt time.Time
 	HTTPPort  string
+	// PublicIP — явный публичный IP сервера (env HOST_PUBLIC_IP). Если задан,
+	// используется как host.public_ip без внешнего lookup'а. Рекомендуется в
+	// контейнерах, где автоопределение даёт IP контейнера, а не хоста.
+	PublicIP string
 }
 
 func (c *Collector) collectApp(_ context.Context) AppInfo {

@@ -16,6 +16,12 @@ type Collector struct {
 
 	// errMu защищает добавление в SystemInfo.Errors из параллельных горутин.
 	errMu sync.Mutex
+
+	// Кэш публичного IP: внешний lookup делаем один раз, дальше переиспользуем
+	// (публичный IP сервера почти не меняется; при смене — рестарт сервиса).
+	ipMu           sync.Mutex
+	publicIP       string
+	publicResolved bool
 }
 
 func NewCollector(app AppMeta, pool *pgxpool.Pool) *Collector {
@@ -36,9 +42,8 @@ func (c *Collector) Collect(ctx context.Context) *SystemInfo {
 		CollectedAt: startedAt.UTC(),
 	}
 
-	// App и Go runtime — мгновенные, без I/O — собираем синхронно.
+	// App — мгновенно, без I/O — собираем синхронно.
 	out.App = c.collectApp(ctx)
-	out.GoRuntime = c.collectGoRuntime(ctx)
 
 	var wg sync.WaitGroup
 

@@ -85,6 +85,7 @@ func main() {
 		Version:   appVersion,
 		StartedAt: startedAt,
 		HTTPPort:  cfg.HTTP.Port,
+		PublicIP:  os.Getenv("HOST_PUBLIC_IP"),
 	}, pool)
 
 	dockerCollector := docker.NewCollector(cfg.Docker.Host)

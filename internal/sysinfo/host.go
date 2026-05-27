@@ -3,8 +3,11 @@ package sysinfo
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/host"
@@ -26,6 +29,8 @@ func (c *Collector) collectHost(ctx context.Context) (HostInfo, error) {
 	out := HostInfo{
 		Hostname:             info.Hostname,
 		FQDN:                 lookupFQDN(info.Hostname),
+		PrimaryIP:            outboundIP(),
+		PublicIP:             c.resolvePublicIP(ctx),
 		OS:                   info.OS,
 		Platform:             info.Platform,
 		PlatformFamily:       info.PlatformFamily,
@@ -62,4 +67,76 @@ func lookupFQDN(hostname string) string {
 		fqdn = fqdn[:l-1]
 	}
 	return fqdn
+}
+
+// outboundIP определяет основной исходящий IPv4 машины: «фейковый» UDP-dial
+// не шлёт пакетов, но заставляет ОС выбрать интерфейс/адрес для маршрута наружу.
+// В bridge-контейнере вернёт IP контейнера (172.x), на голом железе — реальный.
+func outboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return addr.IP.String()
+	}
+	return ""
+}
+
+// resolvePublicIP возвращает публичный (внешний) IP сервера.
+// Приоритет:
+//  1. env HOST_PUBLIC_IP (через AppMeta.PublicIP) — мгновенно, без сети;
+//  2. закэшированный результат прошлого внешнего lookup'а;
+//  3. одноразовый best-effort внешний запрос (с коротким таймаутом).
+func (c *Collector) resolvePublicIP(ctx context.Context) string {
+	if c.app.PublicIP != "" {
+		return c.app.PublicIP
+	}
+
+	c.ipMu.Lock()
+	if c.publicResolved {
+		ip := c.publicIP
+		c.ipMu.Unlock()
+		return ip
+	}
+	c.ipMu.Unlock()
+
+	ip := fetchPublicIP(ctx)
+	if ip != "" {
+		c.ipMu.Lock()
+		c.publicIP = ip
+		c.publicResolved = true
+		c.ipMu.Unlock()
+	}
+	return ip
+}
+
+// fetchPublicIP — best-effort внешний запрос публичного IP. Жёсткий таймаут,
+// чтобы не подвешивать сбор. Пустая строка при любой ошибке.
+func fetchPublicIP(ctx context.Context) string {
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://api.ipify.org", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil {
+		return ""
+	}
+	ip := strings.TrimSpace(string(body))
+	if net.ParseIP(ip) == nil {
+		return ""
+	}
+	return ip
 }

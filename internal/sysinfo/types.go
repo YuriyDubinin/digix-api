@@ -18,15 +18,14 @@ type SystemInfo struct {
 	CollectedAt          time.Time `json:"collected_at"`
 	CollectionDurationMS int64     `json:"collection_duration_ms"`
 
-	App       AppInfo        `json:"app"`
-	Host      HostInfo       `json:"host"`
-	CPU       CPUInfo        `json:"cpu"`
-	Memory    MemoryInfo     `json:"memory"`
-	Disks     DisksInfo      `json:"disks"`
-	Network   NetworkInfo    `json:"network"`
-	Process   ProcessInfo    `json:"process"`
-	GoRuntime GoRuntimeInfo  `json:"go_runtime"`
-	Database  DatabaseInfo   `json:"database"`
+	App      AppInfo      `json:"app"`
+	Host     HostInfo     `json:"host"`
+	CPU      CPUInfo      `json:"cpu"`
+	Memory   MemoryInfo   `json:"memory"`
+	Disks    DisksInfo    `json:"disks"`
+	Network  NetworkInfo  `json:"network"`
+	Process  ProcessInfo  `json:"process"`
+	Database DatabaseInfo `json:"database"`
 
 	// Errors — секции, которые не удалось собрать (нет прав, не поддерживается ОС
 	// и т.п.). Каждая запись помечена путём (host.virtualization,
@@ -55,6 +54,8 @@ type AppInfo struct {
 type HostInfo struct {
 	Hostname             string    `json:"hostname"`
 	FQDN                 string    `json:"fqdn,omitempty"`
+	PrimaryIP            string    `json:"primary_ip,omitempty"` // основной исходящий IP машины/контейнера
+	PublicIP             string    `json:"public_ip,omitempty"`  // публичный (внешний) IP сервера
 	OS                   string    `json:"os"`               // "linux", "darwin", "windows"
 	Platform             string    `json:"platform"`         // "ubuntu", "macOS"
 	PlatformFamily       string    `json:"platform_family"`  // "debian"
@@ -215,55 +216,6 @@ type ProcessInfo struct {
 	NumThreads     int32     `json:"num_threads"`
 	NumFDs         int32     `json:"num_fds,omitempty"`
 	Nice           int32     `json:"nice"`
-}
-
-// ───────────────────────────── Go runtime ─────────────────────────────
-
-type GoRuntimeInfo struct {
-	Version       string        `json:"version"`
-	Compiler      string        `json:"compiler"`
-	GOOS          string        `json:"goos"`
-	GOARCH        string        `json:"goarch"`
-	GOROOT        string        `json:"goroot"`
-	GOMAXPROCS    int           `json:"gomaxprocs"`
-	NumGoroutines int           `json:"num_goroutines"`
-	NumCgoCalls   int64         `json:"num_cgo_calls"`
-	Memory        GoMemoryStats `json:"memory"`
-	GC            GoGCStats     `json:"gc"`
-	BuildInfo     GoBuildInfo   `json:"build_info"`
-}
-
-type GoMemoryStats struct {
-	AllocBytes      uint64 `json:"alloc_bytes"`
-	TotalAllocBytes uint64 `json:"total_alloc_bytes"`
-	SysBytes        uint64 `json:"sys_bytes"`
-	HeapAllocBytes  uint64 `json:"heap_alloc_bytes"`
-	HeapSysBytes    uint64 `json:"heap_sys_bytes"`
-	HeapIdleBytes   uint64 `json:"heap_idle_bytes"`
-	HeapInuseBytes  uint64 `json:"heap_inuse_bytes"`
-	HeapObjects     uint64 `json:"heap_objects"`
-	StackInuseBytes uint64 `json:"stack_inuse_bytes"`
-	StackSysBytes   uint64 `json:"stack_sys_bytes"`
-	NextGCBytes     uint64 `json:"next_gc_bytes"`
-	Mallocs         uint64 `json:"mallocs"`
-	Frees           uint64 `json:"frees"`
-}
-
-type GoGCStats struct {
-	NumGC         uint32    `json:"num_gc"`
-	NumForcedGC   uint32    `json:"num_forced_gc"`
-	LastGCAt      time.Time `json:"last_gc_at"`
-	TotalPauseNs  uint64    `json:"total_pause_ns"`
-	CPUFraction   float64   `json:"cpu_fraction"`
-	GCPercent     int       `json:"gc_percent"`
-}
-
-type GoBuildInfo struct {
-	MainModule   string `json:"main_module,omitempty"`
-	MainVersion  string `json:"main_version,omitempty"`
-	VCSRevision  string `json:"vcs_revision,omitempty"`
-	VCSTime      string `json:"vcs_time,omitempty"`
-	VCSModified  bool   `json:"vcs_modified"`
 }
 
 // ───────────────────────────── Database ─────────────────────────────
