@@ -22,6 +22,8 @@ type Deps struct {
 	ContainersHandler *handler.ContainersHandler
 	ServicesHandler   *handler.ServicesHandler
 	RegistryHandler   *handler.RegistryHandler
+	ServerHandler     *handler.ServerHandler
+	SSHHandler        *handler.SSHHandler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -66,6 +68,12 @@ func NewRouter(deps Deps) http.Handler {
 			// Список системных сервисов systemd (вкладка Servers).
 			r.Get("/system/services", deps.ServicesHandler.List)
 
+			// SSH-ключ приложения (для подключения к серверам).
+			r.Get("/system/ssh/check", deps.SSHHandler.Check)
+			r.Get("/system/ssh/get", deps.SSHHandler.Get)
+			r.Post("/system/ssh/create", deps.SSHHandler.Create)
+			r.Delete("/system/ssh/delete", deps.SSHHandler.Delete)
+
 			// Подключения к Docker registry.
 			r.Post("/registries/create", deps.RegistryHandler.Create)
 			r.Get("/registries/list", deps.RegistryHandler.List)
@@ -74,6 +82,14 @@ func NewRouter(deps Deps) http.Handler {
 			r.Post("/registries/connect", deps.RegistryHandler.Connect)
 			r.Post("/registries/ping", deps.RegistryHandler.Ping)
 			r.Post("/registries/images", deps.RegistryHandler.Images)
+
+			// Подключения к серверам.
+			r.Post("/servers/create", deps.ServerHandler.Create)
+			r.Get("/servers/list", deps.ServerHandler.List)
+			r.Put("/servers/update", deps.ServerHandler.Update)
+			r.Delete("/servers/delete", deps.ServerHandler.Delete)
+			r.Post("/servers/remote/connect", deps.ServerHandler.RemoteConnect)
+			r.Post("/servers/remote/ping", deps.ServerHandler.RemotePing)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом

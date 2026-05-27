@@ -14,6 +14,8 @@ import (
 	"github.com/YuriyDubinin/dijex-api/internal/registryclient"
 	"github.com/YuriyDubinin/dijex-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
+	"github.com/YuriyDubinin/dijex-api/internal/sshclient"
+	"github.com/YuriyDubinin/dijex-api/internal/sshkey"
 	"github.com/YuriyDubinin/dijex-api/internal/sysinfo"
 	"github.com/YuriyDubinin/dijex-api/internal/systemd"
 	transporthttp "github.com/YuriyDubinin/dijex-api/internal/transport/http"
@@ -63,6 +65,7 @@ func main() {
 	authTokenRepo := postgres.NewAuthTokenRepository(pool)
 	employeeRepo := postgres.NewEmployeeRepository(pool)
 	registryRepo := postgres.NewRegistryRepository(pool)
+	serverRepo := postgres.NewServerRepository(pool)
 
 	telegramNotifier := telegram.NewClient(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
 
@@ -87,6 +90,11 @@ func main() {
 	registryChecker := registryclient.NewChecker()
 	registryService := service.NewRegistryService(registryRepo, registryCipher, registryChecker, log)
 
+	sshManager := sshkey.NewManager(cfg.SSH.KeyPath)
+	sshConnector := sshclient.NewConnector(sshManager)
+	// Тот же шифр используем для секретов серверов (один app-ключ на все секреты).
+	serverService := service.NewServerService(serverRepo, registryCipher, sshConnector, log)
+
 	v := validator.New()
 
 	systemCollector := sysinfo.NewCollector(sysinfo.AppMeta{
@@ -109,6 +117,8 @@ func main() {
 	containersHandler := handler.NewContainersHandler(dockerCollector, log)
 	servicesHandler := handler.NewServicesHandler(servicesCollector, log)
 	registryHandler := handler.NewRegistryHandler(registryService, v, log)
+	serverHandler := handler.NewServerHandler(serverService, v, log)
+	sshHandler := handler.NewSSHHandler(sshManager, log)
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
 		Logger:            log,
@@ -121,6 +131,8 @@ func main() {
 		ContainersHandler: containersHandler,
 		ServicesHandler:   servicesHandler,
 		RegistryHandler:   registryHandler,
+		ServerHandler:     serverHandler,
+		SSHHandler:        sshHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)
 

@@ -24,6 +24,12 @@ type Config struct {
 	Auth     AuthConfig
 	Docker   DockerConfig
 	Registry RegistryConfig
+	SSH      SSHConfig
+}
+
+// SSHConfig — путь к SSH-ключу приложения. Пусто → ~/.ssh/id_ed25519.
+type SSHConfig struct {
+	KeyPath string
 }
 
 type AppConfig struct {
@@ -125,6 +131,9 @@ func Load() (*Config, error) {
 		},
 		Docker: DockerConfig{
 			Host: getString("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		},
+		SSH: SSHConfig{
+			KeyPath: os.Getenv("SSH_KEY_PATH"),
 		},
 		Registry: RegistryConfig{
 			EncryptionKey: os.Getenv("REGISTRY_ENCRYPTION_KEY"),

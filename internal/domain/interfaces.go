@@ -38,6 +38,36 @@ type TokenRepository interface {
 	Revoke(ctx context.Context, id uuid.UUID, reason string, now time.Time) error
 }
 
+// ServerRepository — контракт хранения подключений к серверам.
+type ServerRepository interface {
+	// Create вставляет сервер. Конфликт уникального имени → ErrAlreadyExists.
+	Create(ctx context.Context, s *Server) error
+
+	// List возвращает срез серверов по фильтру + общее число подходящих
+	// записей. Удалённые (soft-delete) не включаются.
+	List(ctx context.Context, filter ServerListFilter) ([]*Server, int, error)
+
+	// GetByID находит живой (не удалённый) сервер. ErrNotFound, если нет.
+	GetByID(ctx context.Context, id uuid.UUID) (*Server, error)
+
+	// Update обновляет сервер по ID. ErrNotFound, если записи нет;
+	// ErrAlreadyExists при конфликте имени. CreatedAt/UpdatedAt результата
+	// заполняются актуальными значениями из БД.
+	Update(ctx context.Context, s *Server) error
+
+	// SoftDelete помечает сервер удалённым (deleted_at = NOW). ErrNotFound,
+	// если записи нет или она уже удалена. Возвращает момент удаления.
+	SoftDelete(ctx context.Context, id uuid.UUID) (time.Time, error)
+
+	// UpdateConnectionStatus пишет результат проверки подключения:
+	// last_checked_at, last_status, last_error. setActive: nil — не трогать
+	// is_active; true/false — установить.
+	UpdateConnectionStatus(ctx context.Context, id uuid.UUID, status, errMsg string, checkedAt time.Time, setActive *bool) error
+
+	// UpdateFacts сохраняет собранные при подключении факты о сервере.
+	UpdateFacts(ctx context.Context, id uuid.UUID, f ServerFacts) error
+}
+
 // EmployeeRepository — контракт чтения сотрудников.
 // Записывает сотрудников пока никто (создаём вручную в БД), поэтому
 // только методы чтения.
