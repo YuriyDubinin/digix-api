@@ -22,6 +22,7 @@ type Config struct {
 	Log      LogConfig
 	Telegram TelegramConfig
 	Auth     AuthConfig
+	Docker   DockerConfig
 }
 
 type AppConfig struct {
@@ -71,6 +72,15 @@ type AuthConfig struct {
 	TokenTTL         time.Duration
 }
 
+// DockerConfig — доступ к Docker Engine API.
+//   - Host — адрес демона. Поддерживается только unix-сокет
+//     ("unix:///var/run/docker.sock"). TCP пока не реализован.
+//     Необязателен: если Docker недоступен, эндпоинт /api/containers
+//     отдаёт available=false, а не ошибку.
+type DockerConfig struct {
+	Host string
+}
+
 func Load() (*Config, error) {
 	// .env — опционально (например, для локальной разработки).
 	// Отсутствие файла не ошибка; ошибки парсинга прокидываем дальше.
@@ -102,6 +112,9 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			TokenSecret: os.Getenv("AUTH_TOKEN_SECRET"),
+		},
+		Docker: DockerConfig{
+			Host: getString("DOCKER_HOST", "unix:///var/run/docker.sock"),
 		},
 	}
 

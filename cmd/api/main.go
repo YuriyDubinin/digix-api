@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/YuriyDubinin/dijex-api/internal/config"
+	"github.com/YuriyDubinin/dijex-api/internal/docker"
 	"github.com/YuriyDubinin/dijex-api/internal/notifier/telegram"
 	"github.com/YuriyDubinin/dijex-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
 	"github.com/YuriyDubinin/dijex-api/internal/sysinfo"
+	"github.com/YuriyDubinin/dijex-api/internal/systemd"
 	transporthttp "github.com/YuriyDubinin/dijex-api/internal/transport/http"
 	"github.com/YuriyDubinin/dijex-api/internal/transport/http/handler"
 	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
@@ -85,20 +87,27 @@ func main() {
 		HTTPPort:  cfg.HTTP.Port,
 	}, pool)
 
+	dockerCollector := docker.NewCollector(cfg.Docker.Host)
+	servicesCollector := systemd.NewCollector()
+
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)
 	authHandler := handler.NewAuthHandler(authService, v, log)
 	meHandler := handler.NewMeHandler()
 	systemHandler := handler.NewSystemHandler(systemCollector, log)
+	containersHandler := handler.NewContainersHandler(dockerCollector, log)
+	servicesHandler := handler.NewServicesHandler(servicesCollector, log)
 
 	router := transporthttp.NewRouter(transporthttp.Deps{
-		Logger:          log,
-		Authenticator:   authService,
-		HealthHandler:   healthHandler,
-		FeedbackHandler: feedbackHandler,
-		AuthHandler:     authHandler,
-		MeHandler:       meHandler,
-		SystemHandler:   systemHandler,
+		Logger:            log,
+		Authenticator:     authService,
+		HealthHandler:     healthHandler,
+		FeedbackHandler:   feedbackHandler,
+		AuthHandler:       authHandler,
+		MeHandler:         meHandler,
+		SystemHandler:     systemHandler,
+		ContainersHandler: containersHandler,
+		ServicesHandler:   servicesHandler,
 	})
 	srv := transporthttp.NewServer(cfg.HTTP, router, log)
 

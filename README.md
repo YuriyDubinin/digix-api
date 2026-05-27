@@ -11,6 +11,10 @@ docker run -d \
   --name dijex-api \
   --env-file .env \
   -p 18080:8080 \
+  --user root \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /run/systemd:/run/systemd:ro \
+  -v /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro \
   yuriydubinin100/dijex-api:1.0.0
 ```
 

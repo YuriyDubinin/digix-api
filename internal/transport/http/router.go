@@ -16,9 +16,11 @@ type Deps struct {
 	Authenticator   domain.Authenticator
 	HealthHandler   *handler.HealthHandler
 	FeedbackHandler *handler.FeedbackHandler
-	AuthHandler     *handler.AuthHandler
-	MeHandler       *handler.MeHandler
-	SystemHandler   *handler.SystemHandler
+	AuthHandler       *handler.AuthHandler
+	MeHandler         *handler.MeHandler
+	SystemHandler     *handler.SystemHandler
+	ContainersHandler *handler.ContainersHandler
+	ServicesHandler   *handler.ServicesHandler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -56,6 +58,12 @@ func NewRouter(deps Deps) http.Handler {
 
 			// Полный снимок состояния машины для админ-консоли (вкладка Core).
 			r.Get("/system", deps.SystemHandler.Get)
+
+			// Список Docker-контейнеров (вкладка Containers).
+			r.Get("/containers", deps.ContainersHandler.List)
+
+			// Список системных сервисов systemd (вкладка Servers).
+			r.Get("/services", deps.ServicesHandler.List)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом
