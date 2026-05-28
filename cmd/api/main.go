@@ -97,6 +97,9 @@ func main() {
 
 	v := validator.New()
 
+	dockerCollector := docker.NewCollector(cfg.Docker.Host)
+	servicesCollector := systemd.NewCollector()
+
 	systemCollector := sysinfo.NewCollector(sysinfo.AppMeta{
 		Name:      "dijex-api",
 		Env:       cfg.App.Env,
@@ -104,10 +107,7 @@ func main() {
 		StartedAt: startedAt,
 		HTTPPort:  cfg.HTTP.Port,
 		PublicIP:  os.Getenv("HOST_PUBLIC_IP"),
-	}, pool)
-
-	dockerCollector := docker.NewCollector(cfg.Docker.Host)
-	servicesCollector := systemd.NewCollector()
+	}, pool, dockerCollector)
 
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)

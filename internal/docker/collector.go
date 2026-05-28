@@ -88,6 +88,17 @@ func (c *Collector) Collect(ctx context.Context) *ContainersInfo {
 	return out
 }
 
+// Version — лёгкий запрос к Docker Engine: возвращает версию демона и версию API.
+// Используется в sysinfo для секции docker в /api/system/main.
+// Возвращает ошибку, если демон недоступен.
+func (c *Collector) Version(ctx context.Context) (engineVersion, apiVersion string, err error) {
+	v, verr := c.client.version(ctx)
+	if verr != nil {
+		return "", "", verr
+	}
+	return v.Version, v.APIVersion, nil
+}
+
 func (c *Collector) collectEngine(ctx context.Context, out *ContainersInfo) *EngineInfo {
 	var (
 		ver  *apiVersion

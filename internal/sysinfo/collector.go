@@ -11,8 +11,9 @@ import (
 // Collector собирает данные о машине. Создаётся один раз в main.go,
 // передаётся в HTTP-хендлер. Thread-safe.
 type Collector struct {
-	app  AppMeta
-	pool *pgxpool.Pool
+	app           AppMeta
+	pool          *pgxpool.Pool
+	dockerVersion dockerVersionProvider // nil допустим — секция docker частично пустая
 
 	// errMu защищает добавление в SystemInfo.Errors из параллельных горутин.
 	errMu sync.Mutex
@@ -24,10 +25,11 @@ type Collector struct {
 	publicResolved bool
 }
 
-func NewCollector(app AppMeta, pool *pgxpool.Pool) *Collector {
+func NewCollector(app AppMeta, pool *pgxpool.Pool, docker dockerVersionProvider) *Collector {
 	return &Collector{
-		app:  app,
-		pool: pool,
+		app:           app,
+		pool:          pool,
+		dockerVersion: docker,
 	}
 }
 
@@ -105,6 +107,12 @@ func (c *Collector) Collect(ctx context.Context) *SystemInfo {
 			c.addErr(out, "process", err.Error())
 		}
 		out.Process = pi
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		out.Docker = c.collectDocker(ctx)
 	}()
 
 	wg.Add(1)

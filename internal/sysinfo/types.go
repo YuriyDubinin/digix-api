@@ -18,14 +18,15 @@ type SystemInfo struct {
 	CollectedAt          time.Time `json:"collected_at"`
 	CollectionDurationMS int64     `json:"collection_duration_ms"`
 
-	App      AppInfo      `json:"app"`
-	Host     HostInfo     `json:"host"`
-	CPU      CPUInfo      `json:"cpu"`
-	Memory   MemoryInfo   `json:"memory"`
-	Disks    DisksInfo    `json:"disks"`
-	Network  NetworkInfo  `json:"network"`
-	Process  ProcessInfo  `json:"process"`
-	Database DatabaseInfo `json:"database"`
+	App      AppInfo        `json:"app"`
+	Host     HostInfo       `json:"host"`
+	CPU      CPUInfo        `json:"cpu"`
+	Memory   MemoryInfo     `json:"memory"`
+	Disks    DisksInfo      `json:"disks"`
+	Network  NetworkInfo    `json:"network"`
+	Process  ProcessInfo    `json:"process"`
+	Database DatabaseInfo   `json:"database"`
+	Docker   DockerVersions `json:"docker"`
 
 	// Errors — секции, которые не удалось собрать (нет прав, не поддерживается ОС
 	// и т.п.). Каждая запись помечена путём (host.virtualization,
@@ -216,6 +217,20 @@ type ProcessInfo struct {
 	NumThreads     int32     `json:"num_threads"`
 	NumFDs         int32     `json:"num_fds,omitempty"`
 	Nice           int32     `json:"nice"`
+}
+
+// ───────────────────────────── Docker ─────────────────────────────
+
+// DockerVersions — версии Docker-стека на сервере. Пустые поля = недоступно.
+//
+//   - Engine / EngineAPI — версия демона (Docker Engine API).
+//   - Compose — версия плагина docker compose. Берётся через `docker compose
+//     version --short`, требует наличия Docker CLI в контейнере. Если CLI
+//     отсутствует — поле пустое.
+type DockerVersions struct {
+	Engine    string `json:"engine,omitempty"`
+	EngineAPI string `json:"engine_api,omitempty"`
+	Compose   string `json:"compose,omitempty"`
 }
 
 // ───────────────────────────── Database ─────────────────────────────

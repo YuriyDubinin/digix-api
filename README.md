@@ -16,6 +16,7 @@ docker run -d \
   -v /run/systemd:/run/systemd:ro \
   -v /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro \
   -v dijex-ssh:/data/ssh \
+  -v /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro \
   yuriydubinin100/dijex-api:1.0.0
 ```
 
