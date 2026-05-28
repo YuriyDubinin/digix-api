@@ -33,48 +33,59 @@ docker pull yuriydubinin100/dijex-api:1.0.0
 
 Базовый URL при локальном запуске: `http://localhost:18080`.
 
-| Метод | Путь | Описание |
+Защищённые эндпоинты требуют заголовок `Authorization: Bearer <token>` (токен из `POST /api/auth/login`).
+
+### Публичные
+
+| Метод | Путь | Что делает |
 |---|---|---|
-| `GET` | `/api/ping` | Проверка, что сервис жив. Возвращает `200 {"status":"ok","message":"API is up and running"}`. |
-| `POST` | `/api/feedbacks/requests` | Создание заявки обратной связи. Принимает JSON, сохраняет в БД, возвращает `201` с `id`, `status`, `created_at`. |
+| `GET` | `/api/ping` | Health-check сервиса (200 OK, если сервис жив). |
+| `POST` | `/api/feedbacks/requests` | Приём заявок с лендинга; отправляет уведомление в Telegram. |
+| `POST` | `/api/auth/login` | Логин сотрудника по email + паролю. Возвращает Bearer-токен. |
 
-### `POST /api/feedbacks/requests`
+### Авторизация и профиль (защищённые)
 
-**Headers:** `Content-Type: application/json`
+| Метод | Путь | Что делает |
+|---|---|---|
+| `POST` | `/api/auth/logout` | Отзывает текущий Bearer-токен (logout). |
+| `GET` | `/api/me` | Данные текущего залогиненного сотрудника (id, role, status). |
 
-**Body:**
+### Система (защищённые)
 
-| Поле | Тип | Обязательное | Ограничения |
-|---|---|---|---|
-| `name` | string | да | 2–255 символов |
-| `email` | string | да | валидный email, до 255 символов |
-| `phone` | string | нет | до 50 символов |
-| `subject` | string | нет | до 500 символов |
-| `message` | string | да | 10–5000 символов |
+| Метод | Путь | Что делает |
+|---|---|---|
+| `GET` | `/api/system/main` | Подробный снимок состояния сервера: app, host, cpu, memory, disks, network, process, database, версии Docker и Docker Compose. |
+| `GET` | `/api/system/containers` | Список Docker-контейнеров хоста с тегами, статусом, портами, сетями, лимитами. |
+| `GET` | `/api/system/services` | Список systemd-сервисов хоста: статусы, PID, память, CPU, перезапуски. |
 
-**Пример запроса:**
-```json
-{
-  "name": "Иван Петров",
-  "email": "ivan@example.com",
-  "phone": "+7 999 123-45-67",
-  "subject": "Хочу заказать сайт",
-  "message": "Здравствуйте, интересует разработка корпоративного сайта."
-}
-```
+### SSH-ключ приложения (защищённые)
 
-**Успех — `201 Created`:**
-```json
-{
-  "id": "ab12cd34-...",
-  "status": "new",
-  "created_at": "2026-05-21T12:34:56Z"
-}
-```
+| Метод | Путь | Что делает |
+|---|---|---|
+| `GET` | `/api/system/ssh/check` | Строгая проверка: есть ли файл ключа И валиден ли он. 200 / 404 / 422. |
+| `GET` | `/api/system/ssh/get` | Получить публичный ключ (для копирования в `authorized_keys` серверов). 404, если ключа нет. |
+| `POST` | `/api/system/ssh/create` | Создаёт Ed25519 ключ в стандартном месте (идемпотентно, не перезаписывает существующий). |
+| `DELETE` | `/api/system/ssh/delete` | Удаляет файл приватного ключа и `.pub`. |
 
-**Ошибки:**
+### Docker Registries (защищённые)
 
-- `400 INVALID_JSON` — невалидный JSON или лишние поля.
-- `422 VALIDATION_ERROR` — нарушены правила валидации. В `details` — список полей с проблемами.
-- `500 INTERNAL_ERROR` — внутренняя ошибка (смотри `docker logs dijex-api`).
+| Метод | Путь | Что делает |
+|---|---|---|
+| `POST` | `/api/registries/create` | Создать подключение к Docker Registry (создаётся выключенным). |
+| `GET` | `/api/registries/list` | Список подключений с пагинацией, фильтрами и сортировкой. |
+| `PUT` | `/api/registries/update` | Полное обновление подключения по id. |
+| `DELETE` | `/api/registries/delete` | Мягкое удаление (soft-delete через `deleted_at`). |
+| `POST` | `/api/registries/connect` | Проверить сохранённое подключение по id (логин в аккаунт по email). При успехе — активирует запись. |
+| `POST` | `/api/registries/ping` | Проверить подключение по сохранённому id и переключить `is_active` (успех → активна, провал → неактивна). |
+| `POST` | `/api/registries/images` | Список образов (репозиториев) с тегами и метаданными по сохранённому подключению. |
 
+### Серверы (защищённые)
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| `POST` | `/api/servers/create` | Создать запись о сервере (host/port/протокол/креды/окружение/теги). |
+| `GET` | `/api/servers/list` | Список серверов с пагинацией, фильтрами (env/protocol/auth_method/is_active) и поиском по name/host. |
+| `PUT` | `/api/servers/update` | Полное обновление сервера по id (секреты управляются `null`/`""`/значением). |
+| `DELETE` | `/api/servers/delete` | Мягкое удаление (soft-delete). |
+| `POST` | `/api/servers/remote/connect` | SSH-вход на сервер (наш ключ → пароль), проверка сессии, сбор фактов (os, kernel, arch, cpu, hostname) в БД. |
+| `POST` | `/api/servers/remote/ping` | SSH health-check сохранённого сервера; переключает `is_active` в обе стороны (успех → true, провал → false). |
