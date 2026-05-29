@@ -89,3 +89,4 @@ docker pull yuriydubinin100/dijex-api:1.0.0
 | `DELETE` | `/api/servers/delete` | Мягкое удаление (soft-delete). |
 | `POST` | `/api/servers/remote/connect` | SSH-вход на сервер (наш ключ → пароль), проверка сессии, сбор фактов (os, kernel, arch, cpu, hostname) в БД. |
 | `POST` | `/api/servers/remote/ping` | SSH health-check сохранённого сервера; переключает `is_active` в обе стороны (успех → true, провал → false). |
+| `POST` | `/api/servers/remote/install-ssh` | Заходит по паролю и идемпотентно ставит наш публичный ключ в `~/.ssh/authorized_keys`, верифицирует ключ переподключением. При успехе выставляет `ssh_key_installed=true` и переключает `auth_method` на `PRIVATE_KEY`. |
