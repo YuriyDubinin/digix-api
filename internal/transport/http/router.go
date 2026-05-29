@@ -64,13 +64,13 @@ func NewRouter(deps Deps) http.Handler {
 			r.Get("/system/main", deps.SystemHandler.Get)
 
 			// Список Docker-контейнеров (вкладка Containers).
-			r.Get("/system/containers", deps.ContainersHandler.List)
+			r.Get("/system/containers/list", deps.ContainersHandler.List)
 
 			// Список Docker-образов (вкладка Images).
-			r.Get("/system/images", deps.ImagesHandler.List)
+			r.Get("/system/images/list", deps.ImagesHandler.List)
 
 			// Список системных сервисов systemd (вкладка Servers).
-			r.Get("/system/services", deps.ServicesHandler.List)
+			r.Get("/system/services/list", deps.ServicesHandler.List)
 
 			// SSH-ключ приложения (для подключения к серверам).
 			r.Get("/system/ssh/check", deps.SSHHandler.Check)
@@ -96,9 +96,9 @@ func NewRouter(deps Deps) http.Handler {
 			r.Post("/servers/remote/ping", deps.ServerHandler.RemotePing)
 			r.Post("/servers/remote/install-ssh", deps.ServerHandler.InstallKey)
 			r.Post("/servers/remote/system/main", deps.ServerHandler.RemoteSystemMain)
-			r.Post("/servers/remote/system/containers", deps.ServerHandler.RemoteSystemContainers)
-			r.Post("/servers/remote/system/images", deps.ServerHandler.RemoteSystemImages)
-			r.Post("/servers/remote/system/services", deps.ServerHandler.RemoteSystemServices)
+			r.Post("/servers/remote/system/containers/list", deps.ServerHandler.RemoteSystemContainers)
+			r.Post("/servers/remote/system/images/list", deps.ServerHandler.RemoteSystemImages)
+			r.Post("/servers/remote/system/services/list", deps.ServerHandler.RemoteSystemServices)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом
