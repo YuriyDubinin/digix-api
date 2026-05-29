@@ -229,6 +229,31 @@ func FromRemoteContainersOutput(o *service.RemoteContainersOutput) RemoteContain
 	}
 }
 
+// RemoteImagesHTTPResponse — обёртка над списком Docker-образов удалённого
+// сервера. Поле `images` имеет ТУ ЖЕ структуру, что отдаёт /api/system/images
+// (тип *docker.ImagesInfo).
+type RemoteImagesHTTPResponse struct {
+	ID        uuid.UUID          `json:"id"`
+	Connected bool               `json:"connected"`
+	Method    string             `json:"method,omitempty"`
+	Status    string             `json:"status"`
+	Message   string             `json:"message"`
+	CheckedAt time.Time          `json:"checked_at"`
+	Images    *docker.ImagesInfo `json:"images,omitempty"`
+}
+
+func FromRemoteImagesOutput(o *service.RemoteImagesOutput) RemoteImagesHTTPResponse {
+	return RemoteImagesHTTPResponse{
+		ID:        o.ID,
+		Connected: o.Connected,
+		Method:    o.Method,
+		Status:    o.Status,
+		Message:   o.Message,
+		CheckedAt: o.CheckedAt,
+		Images:    o.Images,
+	}
+}
+
 // RemoteServicesHTTPResponse — обёртка над списком systemd-сервисов удалённого
 // сервера. Поле `services` — тот же тип *systemd.ServicesInfo, что и у /api/system/services.
 type RemoteServicesHTTPResponse struct {

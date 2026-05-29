@@ -20,6 +20,7 @@ type Deps struct {
 	MeHandler         *handler.MeHandler
 	SystemHandler     *handler.SystemHandler
 	ContainersHandler *handler.ContainersHandler
+	ImagesHandler     *handler.ImagesHandler
 	ServicesHandler   *handler.ServicesHandler
 	RegistryHandler   *handler.RegistryHandler
 	ServerHandler     *handler.ServerHandler
@@ -65,6 +66,9 @@ func NewRouter(deps Deps) http.Handler {
 			// Список Docker-контейнеров (вкладка Containers).
 			r.Get("/system/containers", deps.ContainersHandler.List)
 
+			// Список Docker-образов (вкладка Images).
+			r.Get("/system/images", deps.ImagesHandler.List)
+
 			// Список системных сервисов systemd (вкладка Servers).
 			r.Get("/system/services", deps.ServicesHandler.List)
 
@@ -93,6 +97,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.Post("/servers/remote/install-ssh", deps.ServerHandler.InstallKey)
 			r.Post("/servers/remote/system/main", deps.ServerHandler.RemoteSystemMain)
 			r.Post("/servers/remote/system/containers", deps.ServerHandler.RemoteSystemContainers)
+			r.Post("/servers/remote/system/images", deps.ServerHandler.RemoteSystemImages)
 			r.Post("/servers/remote/system/services", deps.ServerHandler.RemoteSystemServices)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без

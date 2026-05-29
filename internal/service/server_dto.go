@@ -146,6 +146,18 @@ type RemotePingOutput struct {
 	CheckedAt time.Time
 }
 
+// RemoteImagesOutput — оболочка над списком Docker-образов удалённого сервера.
+type RemoteImagesOutput struct {
+	ID        uuid.UUID
+	Connected bool
+	Method    string
+	Status    string
+	Message   string
+	CheckedAt time.Time
+
+	Images *docker.ImagesInfo // только при Connected=true
+}
+
 // RemoteContainersOutput — оболочка над списком контейнеров удалённого сервера.
 // Containers nil-able: если SSH не получилось — отдаём connected=false + причину.
 type RemoteContainersOutput struct {

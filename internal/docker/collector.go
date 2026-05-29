@@ -88,6 +88,108 @@ func (c *Collector) Collect(ctx context.Context) *ContainersInfo {
 	return out
 }
 
+// CollectImages возвращает снимок образов на хосте. Никогда не возвращает
+// ошибку: недоступность демона выражается через ImagesInfo.Available=false.
+// Структура повторяет Collect (containers) — те же engine + errors-поля.
+func (c *Collector) CollectImages(ctx context.Context) *ImagesInfo {
+	out := &ImagesInfo{
+		CollectedAt: time.Now().UTC(),
+		Images:      []Image{},
+	}
+
+	if err := c.client.ping(ctx); err != nil {
+		out.Available = false
+		out.Reason = "Docker daemon unreachable at " + c.client.socketPath + ": " + err.Error()
+		return out
+	}
+	out.Available = true
+
+	engine, engineErrs := c.collectEngineRaw(ctx)
+	out.Engine = engine
+	out.Errors = append(out.Errors, engineErrs...)
+
+	items, err := c.client.listImages(ctx)
+	if err != nil {
+		out.Errors = append(out.Errors, "list images: "+err.Error())
+		return out
+	}
+
+	images := make([]Image, 0, len(items))
+	for _, it := range items {
+		images = append(images, BuildImage(it.ID, it.ParentID, it.RepoTags, it.RepoDigests,
+			time.Unix(it.Created, 0).UTC(), it.Size, it.SharedSize, it.Labels, it.Containers))
+	}
+
+	// Сортировка: образы с тегами выше «висячих», затем по первому тегу/digest.
+	sort.SliceStable(images, func(a, b int) bool {
+		if images[a].Dangling != images[b].Dangling {
+			return !images[a].Dangling
+		}
+		return imageSortKey(images[a]) < imageSortKey(images[b])
+	})
+
+	out.Images = images
+	out.Count = len(images)
+	return out
+}
+
+// BuildImage — фабрика публичного типа Image из «сырых» полей. Используется
+// как локальным коллектором, так и пакетом remotedocker (через SSH), чтобы
+// JSON-контракт совпал байт-в-байт.
+func BuildImage(id, parentID string, repoTags, repoDigests []string, created time.Time,
+	sizeBytes, sharedSize int64, labels map[string]string, containers int) Image {
+	tags := filterRepoTags(repoTags)
+	if containers < 0 {
+		containers = 0
+	}
+	if sharedSize < 0 {
+		sharedSize = 0
+	}
+	return Image{
+		ID:          id,
+		ShortID:     shortID(id),
+		ParentID:    shortID(parentID),
+		RepoTags:    tags,
+		RepoDigests: repoDigests,
+		Created:     created,
+		SizeBytes:   sizeBytes,
+		SharedSize:  sharedSize,
+		Labels:      labels,
+		Containers:  containers,
+		Dangling:    len(tags) == 0,
+	}
+}
+
+// filterRepoTags выкидывает Docker-плейсхолдер "<none>:<none>" — он встречается
+// у dangling-образов и засоряет UI.
+func filterRepoTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t == "" || t == "<none>:<none>" || t == "<none>" {
+			continue
+		}
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// imageSortKey — стабильный ключ для сортировки: первый тег, иначе первый digest, иначе ID.
+func imageSortKey(img Image) string {
+	if len(img.RepoTags) > 0 {
+		return img.RepoTags[0]
+	}
+	if len(img.RepoDigests) > 0 {
+		return img.RepoDigests[0]
+	}
+	return img.ID
+}
+
 // Version — лёгкий запрос к Docker Engine: возвращает версию демона и версию API.
 // Используется в sysinfo для секции docker в /api/system/main.
 // Возвращает ошибку, если демон недоступен.
@@ -100,6 +202,14 @@ func (c *Collector) Version(ctx context.Context) (engineVersion, apiVersion stri
 }
 
 func (c *Collector) collectEngine(ctx context.Context, out *ContainersInfo) *EngineInfo {
+	engine, errs := c.collectEngineRaw(ctx)
+	out.Errors = append(out.Errors, errs...)
+	return engine
+}
+
+// collectEngineRaw — версия без mutation параметра. Возвращает engine и
+// список ошибок отдельно — caller сам решает, куда их складывать.
+func (c *Collector) collectEngineRaw(ctx context.Context) (*EngineInfo, []string) {
 	var (
 		ver  *apiVersion
 		info *apiInfo
@@ -122,8 +232,7 @@ func (c *Collector) collectEngine(ctx context.Context, out *ContainersInfo) *Eng
 	_ = g.Wait()
 
 	if ver == nil && info == nil {
-		out.Errors = append(out.Errors, "engine info unavailable")
-		return nil
+		return nil, []string{"engine info unavailable"}
 	}
 
 	e := &EngineInfo{}
@@ -153,7 +262,7 @@ func (c *Collector) collectEngine(ctx context.Context, out *ContainersInfo) *Eng
 			e.Version = info.ServerVersion
 		}
 	}
-	return e
+	return e, nil
 }
 
 // mergeContainer объединяет данные из list (size, ports, status) и inspect (всё остальное).

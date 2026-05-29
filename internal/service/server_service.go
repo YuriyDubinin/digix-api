@@ -47,6 +47,12 @@ type remoteContainersCollector interface {
 	Collect(ctx context.Context, client *ssh.Client) *docker.ContainersInfo
 }
 
+// remoteImagesCollector — контракт сбора Docker-образов удалённого сервера.
+// Реализуется *remotedocker.Collector (метод CollectImages). nil допустим.
+type remoteImagesCollector interface {
+	CollectImages(ctx context.Context, client *ssh.Client) *docker.ImagesInfo
+}
+
 // remoteServicesCollector — контракт сбора systemd-сервисов удалённого
 // сервера. Реализуется *remotesystemd.Collector. nil допустим.
 type remoteServicesCollector interface {
@@ -81,6 +87,7 @@ type ServerService struct {
 	geo              geoResolver               // nil допустим
 	systemRemote     remoteSystemCollector     // nil допустим
 	containersRemote remoteContainersCollector // nil допустим
+	imagesRemote     remoteImagesCollector     // nil допустим
 	servicesRemote   remoteServicesCollector   // nil допустим
 	logger           *slog.Logger
 	clock            func() time.Time
@@ -94,6 +101,7 @@ func NewServerService(
 	geoRes geoResolver,
 	systemRemote remoteSystemCollector,
 	containersRemote remoteContainersCollector,
+	imagesRemote remoteImagesCollector,
 	servicesRemote remoteServicesCollector,
 	logger *slog.Logger,
 ) *ServerService {
@@ -105,6 +113,7 @@ func NewServerService(
 		geo:              geoRes,
 		systemRemote:     systemRemote,
 		containersRemote: containersRemote,
+		imagesRemote:     imagesRemote,
 		servicesRemote:   servicesRemote,
 		logger:           logger,
 		clock:            time.Now,
@@ -329,6 +338,47 @@ func (s *ServerService) RemoteContainers(ctx context.Context, id uuid.UUID) (*Re
 		Message:    "containers collected via " + method,
 		CheckedAt:  now,
 		Containers: info,
+	}, nil
+}
+
+// RemoteImages возвращает список Docker-образов с удалённого сервера через
+// SSH + CLI `docker image inspect`. JSON-форма ответа эквивалентна
+// /api/system/images. is_active не трогаем — метод диагностический.
+func (s *ServerService) RemoteImages(ctx context.Context, id uuid.UUID) (*RemoteImagesOutput, error) {
+	if s.imagesRemote == nil {
+		return nil, fmt.Errorf("server: remote images collector is not configured")
+	}
+	client, method, failRes, err := s.openRemoteSession(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		now := s.clock()
+		s.logger.Info("server remote images", "server_id", id, "status", failRes.Status, "connected", false)
+		return &RemoteImagesOutput{
+			ID: id, Connected: false, Status: failRes.Status, Message: failRes.Message, CheckedAt: now,
+		}, nil
+	}
+	defer client.Close()
+
+	info := s.imagesRemote.CollectImages(ctx, client)
+
+	now := s.clock()
+	if uerr := s.repo.UpdateConnectionStatus(ctx, id, sshclient.StatusOK, "", now, nil); uerr != nil {
+		s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+	}
+	s.logger.Info("server remote images",
+		"server_id", id, "status", sshclient.StatusOK, "method", method, "connected", true,
+		"count", info.Count, "available", info.Available,
+	)
+	return &RemoteImagesOutput{
+		ID:        id,
+		Connected: true,
+		Method:    method,
+		Status:    sshclient.StatusOK,
+		Message:   "images collected via " + method,
+		CheckedAt: now,
+		Images:    info,
 	}, nil
 }
 

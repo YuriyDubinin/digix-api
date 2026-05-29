@@ -28,6 +28,7 @@ type ServerService interface {
 	InstallSSHKey(ctx context.Context, id uuid.UUID) (*service.InstallSSHKeyOutput, error)
 	RemoteSystemInfo(ctx context.Context, id uuid.UUID) (*service.RemoteSystemInfoOutput, error)
 	RemoteContainers(ctx context.Context, id uuid.UUID) (*service.RemoteContainersOutput, error)
+	RemoteImages(ctx context.Context, id uuid.UUID) (*service.RemoteImagesOutput, error)
 	RemoteServices(ctx context.Context, id uuid.UUID) (*service.RemoteServicesOutput, error)
 }
 
@@ -212,6 +213,23 @@ func (h *ServerHandler) RemoteSystemContainers(w http.ResponseWriter, r *http.Re
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, dto.FromRemoteContainersOutput(out))
+}
+
+// RemoteSystemImages — POST /api/servers/remote/system/images.
+// Список Docker-образов удалённого сервера. Структура `images` идентична
+// /api/system/images — фронт рендерит теми же компонентами.
+// Сетевые сбои / отказ auth — 200 с connected=false.
+func (h *ServerHandler) RemoteSystemImages(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.decodeRemoteID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.service.RemoteImages(r.Context(), id)
+	if err != nil {
+		h.writeRemoteError(w, r, err, "remote system images")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, dto.FromRemoteImagesOutput(out))
 }
 
 // RemoteSystemServices — POST /api/servers/remote/system/services.

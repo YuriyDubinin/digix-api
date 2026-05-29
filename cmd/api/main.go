@@ -113,9 +113,11 @@ func main() {
 	remoteServicesCollector := remotesystemd.NewCollector()
 
 	// Тот же шифр используем для секретов серверов (один app-ключ на все секреты).
+	// Коллектор для удалённых образов — это тот же *remotedocker.Collector
+	// (у него уже есть метод CollectImages).
 	serverService := service.NewServerService(
 		serverRepo, registryCipher, sshConnector, sshManager, geoResolver,
-		remoteSystemCollector, remoteContainersCollector, remoteServicesCollector,
+		remoteSystemCollector, remoteContainersCollector, remoteContainersCollector, remoteServicesCollector,
 		log,
 	)
 
@@ -139,6 +141,7 @@ func main() {
 	meHandler := handler.NewMeHandler()
 	systemHandler := handler.NewSystemHandler(systemCollector, log)
 	containersHandler := handler.NewContainersHandler(dockerCollector, log)
+	imagesHandler := handler.NewImagesHandler(dockerCollector, log)
 	servicesHandler := handler.NewServicesHandler(servicesCollector, log)
 	registryHandler := handler.NewRegistryHandler(registryService, v, log)
 	serverHandler := handler.NewServerHandler(serverService, v, log)
@@ -153,6 +156,7 @@ func main() {
 		MeHandler:         meHandler,
 		SystemHandler:     systemHandler,
 		ContainersHandler: containersHandler,
+		ImagesHandler:     imagesHandler,
 		ServicesHandler:   servicesHandler,
 		RegistryHandler:   registryHandler,
 		ServerHandler:     serverHandler,

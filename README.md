@@ -56,6 +56,7 @@ docker pull yuriydubinin100/dijex-api:1.0.0
 |---|---|---|
 | `GET` | `/api/system/main` | Подробный снимок состояния сервера: app, host (включая `country_code`/`country` по публичному IP), cpu, memory, disks, network, process, database, версии Docker и Docker Compose. |
 | `GET` | `/api/system/containers` | Список Docker-контейнеров хоста с тегами, статусом, портами, сетями, лимитами. |
+| `GET` | `/api/system/images` | Список Docker-образов хоста с тегами, размером, лейблами, счётчиком использующих контейнеров и пометкой `dangling`. |
 | `GET` | `/api/system/services` | Список systemd-сервисов хоста: статусы, PID, память, CPU, перезапуски. |
 
 ### SSH-ключ приложения (защищённые)
@@ -92,6 +93,7 @@ docker pull yuriydubinin100/dijex-api:1.0.0
 | `POST` | `/api/servers/remote/install-ssh` | Заходит по паролю и идемпотентно ставит наш публичный ключ в `~/.ssh/authorized_keys`, верифицирует ключ переподключением. При успехе выставляет `ssh_key_installed=true` и переключает `auth_method` на `PRIVATE_KEY`. |
 | `POST` | `/api/servers/remote/system/main` | Подробный снимок удалённого сервера через SSH: host, cpu, memory, disks, network, docker. JSON-контракт идентичен `/api/system/main`, фронт может рендерить теми же компонентами. |
 | `POST` | `/api/servers/remote/system/containers` | Список Docker-контейнеров удалённого сервера через SSH (`docker version` + `info` + `inspect --size`). JSON-контракт идентичен `/api/system/containers`. |
+| `POST` | `/api/servers/remote/system/images` | Список Docker-образов удалённого сервера через SSH (`docker image inspect $(docker image ls -q)` + `docker ps` для счётчика). JSON-контракт идентичен `/api/system/images`. |
 | `POST` | `/api/servers/remote/system/services` | Список systemd-сервисов удалённого сервера через SSH (`systemctl list-units` + `show`). JSON-контракт идентичен `/api/system/services`. |
 
 ## Геолокация по IP

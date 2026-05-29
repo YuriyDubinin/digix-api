@@ -87,6 +87,48 @@ type Container struct {
 	SizeRootFsBytes int64             `json:"size_root_fs_bytes,omitempty"`
 }
 
+// ───────────────────────── Images ─────────────────────────
+
+// ImagesInfo — корневой ответ /api/system/images. Структурно повторяет
+// ContainersInfo, чтобы фронт переиспользовал шаблон рендера.
+type ImagesInfo struct {
+	Available   bool        `json:"available"`
+	Reason      string      `json:"reason,omitempty"`
+	CollectedAt time.Time   `json:"collected_at"`
+	Engine      *EngineInfo `json:"engine,omitempty"`
+	Count       int         `json:"count"`
+	Images      []Image     `json:"images"`
+	Errors      []string    `json:"errors,omitempty"`
+}
+
+// Image — подробные данные об одном образе.
+type Image struct {
+	ID          string            `json:"id"`                    // "sha256:..."
+	ShortID     string            `json:"short_id"`              // 12 hex после "sha256:"
+	ParentID    string            `json:"parent_id,omitempty"`
+	RepoTags    []string          `json:"repo_tags,omitempty"`   // "nginx:1.27"; пусто для dangling
+	RepoDigests []string          `json:"repo_digests,omitempty"`
+	Created     time.Time         `json:"created"`
+	SizeBytes   int64             `json:"size_bytes"`
+	SharedSize  int64             `json:"shared_size,omitempty"` // только локально (Engine API)
+	Labels      map[string]string `json:"labels,omitempty"`
+	Containers  int               `json:"containers"`            // сколько контейнеров используют этот образ
+	Dangling    bool              `json:"dangling"`              // нет ни одного тега
+}
+
+// apiImageItem — внутренний формат Engine API /images/json?digests=1.
+type apiImageItem struct {
+	ID          string            `json:"Id"`
+	ParentID    string            `json:"ParentId"`
+	RepoTags    []string          `json:"RepoTags"`
+	RepoDigests []string          `json:"RepoDigests"`
+	Created     int64             `json:"Created"` // unix seconds
+	Size        int64             `json:"Size"`
+	SharedSize  int64             `json:"SharedSize"`
+	Labels      map[string]string `json:"Labels"`
+	Containers  int               `json:"Containers"`
+}
+
 type Port struct {
 	IP          string `json:"ip,omitempty"`
 	PrivatePort int    `json:"private_port"`

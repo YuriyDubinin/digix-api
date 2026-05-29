@@ -122,3 +122,17 @@ func (c *client) inspectContainer(ctx context.Context, id string) (*apiInspect, 
 	}
 	return &ins, nil
 }
+
+// listImages вызывает Engine API /images/json?digests=1 — там сразу есть
+// RepoDigests, Containers (счётчик использующих образ контейнеров) и
+// SharedSize, поэтому отдельные inspect-запросы не нужны.
+func (c *client) listImages(ctx context.Context) ([]apiImageItem, error) {
+	q := url.Values{}
+	q.Set("digests", "1")
+	q.Set("all", "false") // промежуточные слои не показываем
+	var items []apiImageItem
+	if err := c.getJSON(ctx, "/images/json", q, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
