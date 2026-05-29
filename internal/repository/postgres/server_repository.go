@@ -30,7 +30,7 @@ const serverColumns = `
 	COALESCE(description, ''), environment::text, COALESCE(provider, ''), COALESCE(location, ''), COALESCE(tags, '{}'),
 	COALESCE(os, ''), COALESCE(os_version, ''), COALESCE(arch, ''), COALESCE(kernel_version, ''), COALESCE(remote_hostname, ''),
 	cpu_cores, memory_total_bytes, disk_total_bytes,
-	is_active, last_checked_at, COALESCE(last_status, ''), COALESCE(last_error, ''),
+	is_active, ssh_key_installed, last_checked_at, COALESCE(last_status, ''), COALESCE(last_error, ''),
 	created_at, updated_at
 `
 
@@ -42,7 +42,7 @@ func scanServer(row pgx.Row) (*domain.Server, error) {
 		&s.Description, &s.Environment, &s.Provider, &s.Location, &s.Tags,
 		&s.OS, &s.OSVersion, &s.Arch, &s.KernelVersion, &s.RemoteHostname,
 		&s.CPUCores, &s.MemoryTotalBytes, &s.DiskTotalBytes,
-		&s.IsActive, &s.LastCheckedAt, &s.LastStatus, &s.LastError,
+		&s.IsActive, &s.SSHKeyInstalled, &s.LastCheckedAt, &s.LastStatus, &s.LastError,
 		&s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
@@ -111,14 +111,14 @@ func (r *ServerRepository) Update(ctx context.Context, s *domain.Server) error {
 			tags                             = $14,
 			is_active                        = $15
 		WHERE id = $16 AND deleted_at IS NULL
-		RETURNING created_at, updated_at
+		RETURNING created_at, updated_at, ssh_key_installed
 	`
 	err := r.pool.QueryRow(ctx, query,
 		s.Name, s.Host, s.Port, s.Protocol, s.Username, s.AuthMethod,
 		s.PasswordEncrypted, s.PrivateKeyEncrypted, s.PrivateKeyPassphraseEncrypted,
 		s.Description, s.Environment, s.Provider, s.Location, s.Tags,
 		s.IsActive, s.ID,
-	).Scan(&s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.CreatedAt, &s.UpdatedAt, &s.SSHKeyInstalled)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("postgres: update server %s: %w", s.ID, domain.ErrNotFound)
@@ -180,6 +180,32 @@ func (r *ServerRepository) UpdateFacts(ctx context.Context, id uuid.UUID, f doma
 	`
 	if _, err := r.pool.Exec(ctx, query, f.OS, f.OSVersion, f.Arch, f.KernelVersion, f.RemoteHostname, f.CPUCores, id); err != nil {
 		return fmt.Errorf("postgres: update server facts %s: %w", id, err)
+	}
+	return nil
+}
+
+// MarkSSHKeyInstalled выставляет ssh_key_installed для сервера. При
+// installed=true одновременно переключает auth_method на PRIVATE_KEY —
+// если ключ верифицирован, дальше подключения должны идти именно по нему.
+// При installed=false auth_method не трогается (нет смысла откатывать выбор
+// пользователя из-за неуспешной проверки).
+// ErrNotFound, если сервера нет (или soft-deleted).
+func (r *ServerRepository) MarkSSHKeyInstalled(ctx context.Context, id uuid.UUID, installed bool) error {
+	const query = `
+		UPDATE servers
+		SET ssh_key_installed = $2,
+		    auth_method = CASE
+		        WHEN $2 THEN 'PRIVATE_KEY'::server_auth_method
+		        ELSE auth_method
+		    END
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	tag, err := r.pool.Exec(ctx, query, id, installed)
+	if err != nil {
+		return fmt.Errorf("postgres: mark ssh_key_installed for %s: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("postgres: mark ssh_key_installed for %s: %w", id, domain.ErrNotFound)
 	}
 	return nil
 }

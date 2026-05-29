@@ -89,9 +89,10 @@ type ServerView struct {
 	HasPassword   bool
 	HasPrivateKey bool
 
-	IsActive      bool
-	LastCheckedAt *time.Time
-	LastStatus    string
+	IsActive        bool
+	SSHKeyInstalled bool
+	LastCheckedAt   *time.Time
+	LastStatus      string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -131,4 +132,17 @@ type RemotePingOutput struct {
 	Message   string
 	IsActive  bool
 	CheckedAt time.Time
+}
+
+// InstallSSHKeyOutput — итог установки нашего ключа на удалённый сервер.
+type InstallSSHKeyOutput struct {
+	ID               uuid.UUID
+	Connected        bool      // удалось залогиниться по паролю
+	AlreadyInstalled bool      // ключ уже был в authorized_keys
+	Installed        bool      // ключ дописали в authorized_keys
+	Verified         bool      // ключевая аутентификация прошла после установки
+	SSHKeyInstalled  bool      // флаг в БД после операции (true ↔ Verified=true)
+	Status           string    // OK | AUTH_FAILED | UNREACHABLE | TIMEOUT | ERROR
+	Message          string
+	CheckedAt        time.Time
 }

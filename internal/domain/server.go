@@ -38,10 +38,11 @@ type Server struct {
 	MemoryTotalBytes *int64
 	DiskTotalBytes   *int64
 
-	IsActive      bool
-	LastCheckedAt *time.Time
-	LastStatus    string
-	LastError     string
+	IsActive        bool
+	SSHKeyInstalled bool // наш SSH-ключ приложения добавлен в authorized_keys этого сервера
+	LastCheckedAt   *time.Time
+	LastStatus      string
+	LastError       string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

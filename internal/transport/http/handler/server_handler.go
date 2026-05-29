@@ -25,6 +25,7 @@ type ServerService interface {
 	DeleteServer(ctx context.Context, id uuid.UUID) (*service.DeleteServerOutput, error)
 	RemoteConnect(ctx context.Context, id uuid.UUID) (*service.RemoteConnectOutput, error)
 	RemotePing(ctx context.Context, id uuid.UUID) (*service.RemotePingOutput, error)
+	InstallSSHKey(ctx context.Context, id uuid.UUID) (*service.InstallSSHKeyOutput, error)
 }
 
 type ServerHandler struct {
@@ -173,6 +174,24 @@ func (h *ServerHandler) RemotePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, dto.FromRemotePingOutput(out))
+}
+
+// InstallKey — POST /api/servers/remote/install-ssh.
+// Заходит на сервер по паролю и устанавливает наш публичный ключ приложения
+// в ~/.ssh/authorized_keys (идемпотентно), затем верифицирует ключевую
+// аутентификацию. При успехе ставит ssh_key_installed=true в БД.
+// Недоступность/AUTH_FAILED — 200 с подробностями в теле (не HTTP-ошибка).
+func (h *ServerHandler) InstallKey(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.decodeRemoteID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.service.InstallSSHKey(r.Context(), id)
+	if err != nil {
+		h.writeRemoteError(w, r, err, "install ssh key")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, dto.FromInstallSSHKeyOutput(out))
 }
 
 // decodeRemoteID парсит тело {id}. При ошибке сам пишет ответ и возвращает ok=false.

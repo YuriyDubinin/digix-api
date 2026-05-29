@@ -66,6 +66,13 @@ type ServerRepository interface {
 
 	// UpdateFacts сохраняет собранные при подключении факты о сервере.
 	UpdateFacts(ctx context.Context, id uuid.UUID, f ServerFacts) error
+
+	// MarkSSHKeyInstalled устанавливает флаг ssh_key_installed для сервера.
+	// При installed=true одновременно переключает auth_method на PRIVATE_KEY,
+	// чтобы последующие подключения шли по ключу. При installed=false
+	// auth_method не трогается. Используется методом install-key после
+	// успешной установки и верификации. ErrNotFound, если сервера нет.
+	MarkSSHKeyInstalled(ctx context.Context, id uuid.UUID, installed bool) error
 }
 
 // EmployeeRepository — контракт чтения сотрудников.

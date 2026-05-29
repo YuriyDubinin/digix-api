@@ -90,6 +90,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.Delete("/servers/delete", deps.ServerHandler.Delete)
 			r.Post("/servers/remote/connect", deps.ServerHandler.RemoteConnect)
 			r.Post("/servers/remote/ping", deps.ServerHandler.RemotePing)
+			r.Post("/servers/remote/install-ssh", deps.ServerHandler.InstallKey)
 
 			// Логaut — защищённый, потому что нельзя «разлогиниться» без
 			// валидного токена. Auth middleware сам отдаст 401 при любом

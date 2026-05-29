@@ -162,6 +162,44 @@ func FromRemotePingOutput(o *service.RemotePingOutput) RemotePingHTTPResponse {
 	}
 }
 
+// ───────────────────────── Install SSH key ─────────────────────────
+
+// InstallSSHKeyHTTPRequest — тело запроса установки нашего публичного ключа
+// приложения в authorized_keys выбранного сервера.
+type InstallSSHKeyHTTPRequest struct {
+	ID uuid.UUID `json:"id"`
+}
+
+// InstallSSHKeyHTTPResponse — итог установки ключа. Недоступность сервера
+// или неверный пароль возвращаются в полях connected/status/message, а не
+// HTTP-ошибкой. ssh_key_installed отражает текущий флаг в БД (true только при
+// подтверждённой работе ключа).
+type InstallSSHKeyHTTPResponse struct {
+	ID               uuid.UUID `json:"id"`
+	Connected        bool      `json:"connected"`
+	AlreadyInstalled bool      `json:"already_installed"`
+	Installed        bool      `json:"installed"`
+	Verified         bool      `json:"verified"`
+	SSHKeyInstalled  bool      `json:"ssh_key_installed"`
+	Status           string    `json:"status"` // OK | AUTH_FAILED | UNREACHABLE | TIMEOUT | ERROR
+	Message          string    `json:"message"`
+	CheckedAt        time.Time `json:"checked_at"`
+}
+
+func FromInstallSSHKeyOutput(o *service.InstallSSHKeyOutput) InstallSSHKeyHTTPResponse {
+	return InstallSSHKeyHTTPResponse{
+		ID:               o.ID,
+		Connected:        o.Connected,
+		AlreadyInstalled: o.AlreadyInstalled,
+		Installed:        o.Installed,
+		Verified:         o.Verified,
+		SSHKeyInstalled:  o.SSHKeyInstalled,
+		Status:           o.Status,
+		Message:          o.Message,
+		CheckedAt:        o.CheckedAt,
+	}
+}
+
 // ───────────────────────── View / List ─────────────────────────
 
 type ServerHTTPResponse struct {
@@ -188,6 +226,7 @@ type ServerHTTPResponse struct {
 	HasPassword      bool       `json:"has_password"`
 	HasPrivateKey    bool       `json:"has_private_key"`
 	IsActive         bool       `json:"is_active"`
+	SSHKeyInstalled  bool       `json:"ssh_key_installed"`
 	LastCheckedAt    *time.Time `json:"last_checked_at,omitempty"`
 	LastStatus       string     `json:"last_status,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
@@ -219,6 +258,7 @@ func FromServerView(v *service.ServerView) ServerHTTPResponse {
 		HasPassword:      v.HasPassword,
 		HasPrivateKey:    v.HasPrivateKey,
 		IsActive:         v.IsActive,
+		SSHKeyInstalled:  v.SSHKeyInstalled,
 		LastCheckedAt:    v.LastCheckedAt,
 		LastStatus:       v.LastStatus,
 		CreatedAt:        v.CreatedAt,

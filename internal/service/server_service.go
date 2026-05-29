@@ -12,6 +12,7 @@ import (
 
 	"github.com/YuriyDubinin/dijex-api/internal/domain"
 	"github.com/YuriyDubinin/dijex-api/internal/sshclient"
+	"github.com/YuriyDubinin/dijex-api/internal/sshkey"
 	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
 )
 
@@ -19,6 +20,13 @@ import (
 type serverConnector interface {
 	Connect(ctx context.Context, t sshclient.Target) sshclient.Result
 	Ping(ctx context.Context, t sshclient.Target) sshclient.Result
+	InstallPublicKey(ctx context.Context, t sshclient.Target, publicKey string) sshclient.InstallResult
+}
+
+// serverKeyProvider — контракт получения публичного ключа приложения.
+// Реализуется *sshkey.Manager.
+type serverKeyProvider interface {
+	Check(ctx context.Context) (sshkey.KeyInfo, error)
 }
 
 const (
@@ -33,15 +41,23 @@ type ServerService struct {
 	repo      domain.ServerRepository
 	cipher    *crypto.Cipher
 	connector serverConnector
+	keys      serverKeyProvider
 	logger    *slog.Logger
 	clock     func() time.Time
 }
 
-func NewServerService(repo domain.ServerRepository, cipher *crypto.Cipher, connector serverConnector, logger *slog.Logger) *ServerService {
+func NewServerService(
+	repo domain.ServerRepository,
+	cipher *crypto.Cipher,
+	connector serverConnector,
+	keys serverKeyProvider,
+	logger *slog.Logger,
+) *ServerService {
 	return &ServerService{
 		repo:      repo,
 		cipher:    cipher,
 		connector: connector,
+		keys:      keys,
 		logger:    logger,
 		clock:     time.Now,
 	}
@@ -140,6 +156,86 @@ func (s *ServerService) RemotePing(ctx context.Context, id uuid.UUID) (*RemotePi
 		Message:   res.Message,
 		IsActive:  active,
 		CheckedAt: now,
+	}, nil
+}
+
+// InstallSSHKey устанавливает наш SSH-ключ приложения в authorized_keys
+// удалённого сервера. Заходит ПО ПАРОЛЮ (ключа на сервере ещё нет), добавляет
+// публичный ключ идемпотентно, проверяет верификацией (повторным коннектом по
+// ключу), и при успехе ставит ssh_key_installed=true в БД.
+//
+// Недоступность сервера / неверный пароль — НЕ ошибка метода: 200 с подробным
+// статусом в теле. Ошибки метода — только проблемы запроса/конфигурации.
+func (s *ServerService) InstallSSHKey(ctx context.Context, id uuid.UUID) (*InstallSSHKeyOutput, error) {
+	srv, password, err := s.loadServerForSSH(ctx, id)
+	if err != nil {
+		return nil, err // ValidationErrors / domain.ErrNotFound / decrypt error
+	}
+
+	// Без пароля установка ключа невозможна — это бутстрап, ключа на сервере ещё нет.
+	if password == "" {
+		return nil, domain.ValidationErrors{
+			&domain.ValidationError{Field: "password", Message: "server has no password — install-key requires password to bootstrap"},
+		}
+	}
+
+	// Берём наш публичный ключ.
+	keyInfo, err := s.keys.Check(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("install-key: read app ssh key: %w", err)
+	}
+	if !keyInfo.Valid || keyInfo.PublicKey == "" {
+		return nil, domain.ValidationErrors{
+			&domain.ValidationError{Field: "ssh_key", Message: "app ssh key is missing or invalid — create it via POST /api/system/ssh/create"},
+		}
+	}
+
+	res := s.connector.InstallPublicKey(ctx, sshclient.Target{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.Username,
+		Password: password,
+	}, keyInfo.PublicKey)
+
+	now := s.clock()
+
+	// Ставим флаг в БД ТОЛЬКО при подтверждённой работе ключа.
+	flagSet := false
+	if res.Verified {
+		if err := s.repo.MarkSSHKeyInstalled(ctx, id, true); err != nil {
+			s.logger.Warn("mark ssh_key_installed", "err", err, "server_id", id)
+		} else {
+			flagSet = true
+		}
+	}
+
+	// Полезно также обновить last_status: успех install-key — это и успешный коннект.
+	errMsg := ""
+	if !res.Connected {
+		errMsg = res.Message
+	}
+	if uerr := s.repo.UpdateConnectionStatus(ctx, id, res.Status, errMsg, now, nil); uerr != nil {
+		s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+	}
+
+	s.logger.Info("server install ssh key",
+		"server_id", id,
+		"status", res.Status,
+		"already_installed", res.AlreadyInstalled,
+		"installed", res.Installed,
+		"verified", res.Verified,
+	)
+
+	return &InstallSSHKeyOutput{
+		ID:               id,
+		Connected:        res.Connected,
+		AlreadyInstalled: res.AlreadyInstalled,
+		Installed:        res.Installed,
+		Verified:         res.Verified,
+		SSHKeyInstalled:  flagSet,
+		Status:           res.Status,
+		Message:          res.Message,
+		CheckedAt:        now,
 	}, nil
 }
 
@@ -406,6 +502,7 @@ func toServerView(s *domain.Server) *ServerView {
 		HasPassword:      s.PasswordEncrypted != "",
 		HasPrivateKey:    s.PrivateKeyEncrypted != "",
 		IsActive:         s.IsActive,
+		SSHKeyInstalled:  s.SSHKeyInstalled,
 		LastCheckedAt:    s.LastCheckedAt,
 		LastStatus:       s.LastStatus,
 		CreatedAt:        s.CreatedAt,

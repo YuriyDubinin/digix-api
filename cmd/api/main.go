@@ -93,7 +93,7 @@ func main() {
 	sshManager := sshkey.NewManager(cfg.SSH.KeyPath)
 	sshConnector := sshclient.NewConnector(sshManager)
 	// Тот же шифр используем для секретов серверов (один app-ключ на все секреты).
-	serverService := service.NewServerService(serverRepo, registryCipher, sshConnector, log)
+	serverService := service.NewServerService(serverRepo, registryCipher, sshConnector, sshManager, log)
 
 	v := validator.New()
 

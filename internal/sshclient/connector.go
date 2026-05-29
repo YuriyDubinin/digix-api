@@ -7,6 +7,7 @@ package sshclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -86,6 +87,127 @@ func (c *Connector) Connect(ctx context.Context, t Target) Result {
 		res.Facts = facts // best-effort: ошибка сбора фактов не валит коннект
 	}
 	return res
+}
+
+// InstallResult — итог установки публичного ключа на удалённый сервер.
+type InstallResult struct {
+	Connected        bool   // удалось залогиниться по паролю
+	AlreadyInstalled bool   // ключ уже был в authorized_keys
+	Installed        bool   // ключ дописали в authorized_keys
+	Verified         bool   // повторный коннект по ключу прошёл (значит точно работает)
+	Status           string // OK | AUTH_FAILED | UNREACHABLE | TIMEOUT | ERROR
+	Message          string
+}
+
+// InstallPublicKey заходит на сервер ТОЛЬКО ПО ПАРОЛЮ (ключа на сервере ещё нет —
+// в этом весь смысл), идемпотентно добавляет publicKey в ~/.ssh/authorized_keys,
+// затем разрывает соединение и проверяет, что вход по нашему ключу теперь работает.
+//
+// publicKey — строка вида "ssh-ed25519 AAAA... comment" (как из sshkey.Manager.Check).
+func (c *Connector) InstallPublicKey(ctx context.Context, t Target, publicKey string) InstallResult {
+	publicKey = strings.TrimSpace(publicKey)
+	if publicKey == "" {
+		return InstallResult{Status: StatusError, Message: "public key is empty"}
+	}
+	if t.Password == "" {
+		return InstallResult{Status: StatusAuthFailed, Message: "password is required to install ssh key"}
+	}
+
+	user := t.User
+	if user == "" {
+		user = "root"
+	}
+	addr := net.JoinHostPort(t.Host, strconv.Itoa(t.Port))
+
+	// 1) Логин по паролю (force).
+	client, err := dial(ctx, addr, user, []ssh.AuthMethod{ssh.Password(t.Password)})
+	if err != nil {
+		r := classify(err)
+		return InstallResult{Status: r.Status, Message: r.Message}
+	}
+
+	// 2) Установка ключа через sh-скрипт. Идемпотентно: если ключ уже там — не добавляет.
+	res := InstallResult{Connected: true}
+	out, ierr := runInstallScript(client, publicKey)
+	_ = client.Close()
+	if ierr != nil {
+		return InstallResult{Connected: true, Status: StatusError, Message: "install command failed: " + ierr.Error()}
+	}
+	switch {
+	case strings.Contains(out, "ALREADY_INSTALLED"):
+		res.AlreadyInstalled = true
+	case strings.Contains(out, "INSTALLED"):
+		res.Installed = true
+	default:
+		return InstallResult{Connected: true, Status: StatusError, Message: "unexpected install output: " + out}
+	}
+
+	// 3) Верификация: переподключаемся ТОЛЬКО ПО КЛЮЧУ. Если проходит —
+	// ключ реально работает, можно безопасно ставить флаг в БД.
+	res.Verified = c.verifyKeyAuth(ctx, addr, user)
+
+	res.Status = StatusOK
+	switch {
+	case res.AlreadyInstalled && res.Verified:
+		res.Message = "key was already installed and verified"
+	case res.AlreadyInstalled && !res.Verified:
+		res.Message = "key was already in authorized_keys but key auth still fails (check remote sshd config or ~/.ssh permissions)"
+	case res.Installed && res.Verified:
+		res.Message = "key installed and verified"
+	case res.Installed && !res.Verified:
+		res.Message = "key appended to authorized_keys but key auth verification failed"
+	}
+	return res
+}
+
+// verifyKeyAuth пытается зайти на сервер только по приватному ключу из KeyProvider.
+func (c *Connector) verifyKeyAuth(ctx context.Context, addr, user string) bool {
+	if c.keys == nil {
+		return false
+	}
+	signer, err := c.keys.Signer()
+	if err != nil || signer == nil {
+		return false
+	}
+	client, err := dial(ctx, addr, user, []ssh.AuthMethod{ssh.PublicKeys(signer)})
+	if err != nil {
+		return false
+	}
+	defer client.Close()
+	return verifySession(client) == nil
+}
+
+// runInstallScript выполняет скрипт идемпотентной установки публичного ключа.
+// Тело ключа (algo+base64) — это первые два поля строки; именно по ним проверяем
+// дубликат, чтобы разные комментарии у одного и того же ключа не плодили строки.
+func runInstallScript(client *ssh.Client, publicKey string) (string, error) {
+	parts := strings.Fields(publicKey)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("public key does not look like an authorized_keys line")
+	}
+	keyBody := parts[0] + " " + parts[1]
+
+	script := fmt.Sprintf(`set -e
+umask 077
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+touch "$HOME/.ssh/authorized_keys"
+chmod 600 "$HOME/.ssh/authorized_keys"
+if grep -qF -- '%s' "$HOME/.ssh/authorized_keys"; then
+    printf 'ALREADY_INSTALLED\n'
+else
+    printf '%%s\n' '%s' >> "$HOME/.ssh/authorized_keys"
+    printf 'INSTALLED\n'
+fi
+`, keyBody, publicKey)
+
+	sess, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer sess.Close()
+	out, err := sess.CombinedOutput(script)
+	return strings.TrimSpace(string(out)), err
 }
 
 // Ping: лёгкая проверка SSH-соединения (вход + проверочная команда).
