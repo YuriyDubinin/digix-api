@@ -4,6 +4,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/YuriyDubinin/dijex-api/internal/docker"
+	"github.com/YuriyDubinin/dijex-api/internal/remoteinfo"
+	"github.com/YuriyDubinin/dijex-api/internal/systemd"
 )
 
 // CreateServerInput — данные создания сервера. Секреты — в открытом виде,
@@ -86,6 +90,11 @@ type ServerView struct {
 	MemoryTotalBytes *int64
 	DiskTotalBytes   *int64
 
+	// Гео-факты, собранные при /api/servers/remote/connect.
+	RemotePublicIP string
+	CountryCode    string // ISO 3166-1 alpha-2, например "RU"
+	Country        string // английское имя страны, например "Russia"
+
 	HasPassword   bool
 	HasPrivateKey bool
 
@@ -122,6 +131,9 @@ type RemoteConnectOutput struct {
 	KernelVersion  string
 	Arch           string
 	CPUCores       *int
+	RemotePublicIP string
+	CountryCode    string
+	Country        string
 }
 
 type RemotePingOutput struct {
@@ -132,6 +144,45 @@ type RemotePingOutput struct {
 	Message   string
 	IsActive  bool
 	CheckedAt time.Time
+}
+
+// RemoteContainersOutput — оболочка над списком контейнеров удалённого сервера.
+// Containers nil-able: если SSH не получилось — отдаём connected=false + причину.
+type RemoteContainersOutput struct {
+	ID        uuid.UUID
+	Connected bool
+	Method    string
+	Status    string
+	Message   string
+	CheckedAt time.Time
+
+	Containers *docker.ContainersInfo // только при Connected=true
+}
+
+// RemoteServicesOutput — оболочка над списком systemd-сервисов удалённого сервера.
+type RemoteServicesOutput struct {
+	ID        uuid.UUID
+	Connected bool
+	Method    string
+	Status    string
+	Message   string
+	CheckedAt time.Time
+
+	Services *systemd.ServicesInfo // только при Connected=true
+}
+
+// RemoteSystemInfoOutput — оболочка над снимком удалённого сервера.
+// Сама секция System nil-able: если SSH-коннект не удался, фронт получит
+// Connected=false + Status/Message, без System.
+type RemoteSystemInfoOutput struct {
+	ID        uuid.UUID
+	Connected bool
+	Method    string
+	Status    string
+	Message   string
+	CheckedAt time.Time
+
+	System *remoteinfo.RemoteSystemInfo // только при Connected=true
 }
 
 // InstallSSHKeyOutput — итог установки нашего ключа на удалённый сервер.

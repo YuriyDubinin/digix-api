@@ -5,7 +5,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/YuriyDubinin/dijex-api/internal/docker"
+	"github.com/YuriyDubinin/dijex-api/internal/remoteinfo"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
+	"github.com/YuriyDubinin/dijex-api/internal/systemd"
 )
 
 // ───────────────────────── Create ─────────────────────────
@@ -121,6 +124,9 @@ type RemoteConnectHTTPResponse struct {
 	KernelVersion  string    `json:"kernel_version,omitempty"`
 	Arch           string    `json:"arch,omitempty"`
 	CPUCores       *int      `json:"cpu_cores,omitempty"`
+	RemotePublicIP string    `json:"remote_public_ip,omitempty"`
+	CountryCode    string    `json:"country_code,omitempty"`
+	Country        string    `json:"country,omitempty"`
 	CheckedAt      time.Time `json:"checked_at"`
 }
 
@@ -136,6 +142,9 @@ func FromRemoteConnectOutput(o *service.RemoteConnectOutput) RemoteConnectHTTPRe
 		KernelVersion:  o.KernelVersion,
 		Arch:           o.Arch,
 		CPUCores:       o.CPUCores,
+		RemotePublicIP: o.RemotePublicIP,
+		CountryCode:    o.CountryCode,
+		Country:        o.Country,
 		CheckedAt:      o.CheckedAt,
 	}
 }
@@ -159,6 +168,88 @@ func FromRemotePingOutput(o *service.RemotePingOutput) RemotePingHTTPResponse {
 		Message:   o.Message,
 		IsActive:  o.IsActive,
 		CheckedAt: o.CheckedAt,
+	}
+}
+
+// ───────────────────────── Remote system info ─────────────────────────
+
+// RemoteSystemInfoHTTPResponse — обёртка над снимком удалённой системы.
+// Структура повторяет шаблон RemoteConnect-ответа (id/connected/status/...).
+// Если SSH-коннект не удался, `system` отсутствует (omitempty), а status
+// несёт причину (AUTH_FAILED, UNREACHABLE, TIMEOUT, ERROR).
+//
+// Сама секция `system` намеренно повторяет JSON-контракт `/api/system/main`:
+// host/cpu/memory/disks/network/docker — те же поля, что и у локального хоста.
+type RemoteSystemInfoHTTPResponse struct {
+	ID        uuid.UUID                    `json:"id"`
+	Connected bool                         `json:"connected"`
+	Method    string                       `json:"method,omitempty"`
+	Status    string                       `json:"status"`
+	Message   string                       `json:"message"`
+	CheckedAt time.Time                    `json:"checked_at"`
+	System    *remoteinfo.RemoteSystemInfo `json:"system,omitempty"`
+}
+
+func FromRemoteSystemInfoOutput(o *service.RemoteSystemInfoOutput) RemoteSystemInfoHTTPResponse {
+	return RemoteSystemInfoHTTPResponse{
+		ID:        o.ID,
+		Connected: o.Connected,
+		Method:    o.Method,
+		Status:    o.Status,
+		Message:   o.Message,
+		CheckedAt: o.CheckedAt,
+		System:    o.System,
+	}
+}
+
+// ───────────────────────── Remote containers / services ─────────────────────────
+
+// RemoteContainersHTTPResponse — обёртка над списком контейнеров удалённого
+// сервера. Поле `containers` имеет ТУ ЖЕ структуру, что отдаёт /api/system/containers
+// (тип *docker.ContainersInfo), — фронт переиспользует те же компоненты.
+type RemoteContainersHTTPResponse struct {
+	ID         uuid.UUID              `json:"id"`
+	Connected  bool                   `json:"connected"`
+	Method     string                 `json:"method,omitempty"`
+	Status     string                 `json:"status"`
+	Message    string                 `json:"message"`
+	CheckedAt  time.Time              `json:"checked_at"`
+	Containers *docker.ContainersInfo `json:"containers,omitempty"`
+}
+
+func FromRemoteContainersOutput(o *service.RemoteContainersOutput) RemoteContainersHTTPResponse {
+	return RemoteContainersHTTPResponse{
+		ID:         o.ID,
+		Connected:  o.Connected,
+		Method:     o.Method,
+		Status:     o.Status,
+		Message:    o.Message,
+		CheckedAt:  o.CheckedAt,
+		Containers: o.Containers,
+	}
+}
+
+// RemoteServicesHTTPResponse — обёртка над списком systemd-сервисов удалённого
+// сервера. Поле `services` — тот же тип *systemd.ServicesInfo, что и у /api/system/services.
+type RemoteServicesHTTPResponse struct {
+	ID        uuid.UUID             `json:"id"`
+	Connected bool                  `json:"connected"`
+	Method    string                `json:"method,omitempty"`
+	Status    string                `json:"status"`
+	Message   string                `json:"message"`
+	CheckedAt time.Time             `json:"checked_at"`
+	Services  *systemd.ServicesInfo `json:"services,omitempty"`
+}
+
+func FromRemoteServicesOutput(o *service.RemoteServicesOutput) RemoteServicesHTTPResponse {
+	return RemoteServicesHTTPResponse{
+		ID:        o.ID,
+		Connected: o.Connected,
+		Method:    o.Method,
+		Status:    o.Status,
+		Message:   o.Message,
+		CheckedAt: o.CheckedAt,
+		Services:  o.Services,
 	}
 }
 
@@ -223,6 +314,9 @@ type ServerHTTPResponse struct {
 	CPUCores         *int       `json:"cpu_cores,omitempty"`
 	MemoryTotalBytes *int64     `json:"memory_total_bytes,omitempty"`
 	DiskTotalBytes   *int64     `json:"disk_total_bytes,omitempty"`
+	RemotePublicIP   string     `json:"remote_public_ip,omitempty"`
+	CountryCode      string     `json:"country_code,omitempty"`
+	Country          string     `json:"country,omitempty"`
 	HasPassword      bool       `json:"has_password"`
 	HasPrivateKey    bool       `json:"has_private_key"`
 	IsActive         bool       `json:"is_active"`
@@ -255,6 +349,9 @@ func FromServerView(v *service.ServerView) ServerHTTPResponse {
 		CPUCores:         v.CPUCores,
 		MemoryTotalBytes: v.MemoryTotalBytes,
 		DiskTotalBytes:   v.DiskTotalBytes,
+		RemotePublicIP:   v.RemotePublicIP,
+		CountryCode:      v.CountryCode,
+		Country:          v.Country,
 		HasPassword:      v.HasPassword,
 		HasPrivateKey:    v.HasPrivateKey,
 		IsActive:         v.IsActive,

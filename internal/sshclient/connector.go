@@ -50,6 +50,10 @@ type Facts struct {
 	KernelVersion string
 	Arch          string
 	CPUCores      int
+	// PublicIP — публичный IP, который видит сам сервер (через api.ipify.org
+	// или dig opendns). Пусто, если у сервера нет внешнего интернета и оба
+	// способа не сработали. Используется в сервис-слое для resolve страны.
+	PublicIP string
 }
 
 // Result — итог операции.
@@ -67,6 +71,16 @@ type Connector struct {
 
 func NewConnector(keys KeyProvider) *Connector {
 	return &Connector{keys: keys}
+}
+
+// Dial открывает SSH-соединение (ключ → пароль). Возвращает живой *ssh.Client
+// — caller обязан его закрыть. На неуспех возвращает (nil, "", failResult)
+// с осмысленным статусом.
+//
+// Используется операциями, которым нужно несколько SSH-сессий подряд
+// (например, сбор расширенного снимка системы /api/servers/remote/system/main).
+func (c *Connector) Dial(ctx context.Context, t Target) (*ssh.Client, string, Result) {
+	return c.establish(ctx, t)
 }
 
 // Connect: вход (ключ → пароль), проверка сессии, сбор фактов.
@@ -308,7 +322,17 @@ func collectFacts(client *ssh.Client) (*Facts, error) {
 	}
 	defer sess.Close()
 
-	out, err := sess.Output("hostname; uname -s; uname -r; uname -m; (nproc 2>/dev/null || echo 0)")
+	// Одной сессией собираем всё; для публичного IP пробуем curl, потом dig,
+	// потом пустая строка — best-effort, не должен валить весь блок фактов.
+	const script = `hostname
+uname -s
+uname -r
+uname -m
+(nproc 2>/dev/null || echo 0)
+(curl -fsS --max-time 2 https://api.ipify.org 2>/dev/null \
+  || dig +short +time=1 +tries=1 myip.opendns.com @resolver1.opendns.com 2>/dev/null \
+  || echo "")`
+	out, err := sess.Output(script)
 	if err != nil {
 		return nil, err
 	}
@@ -320,12 +344,18 @@ func collectFacts(client *ssh.Client) (*Facts, error) {
 		return ""
 	}
 	cores, _ := strconv.Atoi(get(4))
+	publicIP := get(5)
+	// Валидация: пустая строка/мусор — оставляем пусто, дальше service просто не резолвит.
+	if publicIP != "" && net.ParseIP(publicIP) == nil {
+		publicIP = ""
+	}
 	return &Facts{
 		Hostname:      get(0),
 		OS:            get(1),
 		KernelVersion: get(2),
 		Arch:          get(3),
 		CPUCores:      cores,
+		PublicIP:      publicIP,
 	}, nil
 }
 

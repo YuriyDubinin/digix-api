@@ -10,9 +10,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"golang.org/x/crypto/ssh"
+
+	"github.com/YuriyDubinin/dijex-api/internal/docker"
 	"github.com/YuriyDubinin/dijex-api/internal/domain"
+	"github.com/YuriyDubinin/dijex-api/internal/geo"
+	"github.com/YuriyDubinin/dijex-api/internal/remoteinfo"
 	"github.com/YuriyDubinin/dijex-api/internal/sshclient"
 	"github.com/YuriyDubinin/dijex-api/internal/sshkey"
+	"github.com/YuriyDubinin/dijex-api/internal/systemd"
 	"github.com/YuriyDubinin/dijex-api/pkg/crypto"
 )
 
@@ -21,12 +27,42 @@ type serverConnector interface {
 	Connect(ctx context.Context, t sshclient.Target) sshclient.Result
 	Ping(ctx context.Context, t sshclient.Target) sshclient.Result
 	InstallPublicKey(ctx context.Context, t sshclient.Target, publicKey string) sshclient.InstallResult
+	// Dial открывает SSH-соединение и возвращает живой клиент для нескольких
+	// последовательных сессий (например, сбор расширенного снимка системы).
+	// Caller обязан закрыть клиент. На неуспех — (nil, "", failResult).
+	Dial(ctx context.Context, t sshclient.Target) (*ssh.Client, string, sshclient.Result)
+}
+
+// remoteSystemCollector — узкий контракт сбора снимка удалённой системы.
+// Реализуется *remoteinfo.Collector. nil допустим (тогда метод RemoteSystemInfo
+// вернёт ошибку конфигурации).
+type remoteSystemCollector interface {
+	Collect(ctx context.Context, client *ssh.Client, conn remoteinfo.ConnectionInfo) *remoteinfo.RemoteSystemInfo
+}
+
+// remoteContainersCollector — контракт сбора списка контейнеров удалённого
+// сервера. Реализуется *remotedocker.Collector. nil допустим — тогда метод
+// RemoteContainers вернёт ошибку конфигурации.
+type remoteContainersCollector interface {
+	Collect(ctx context.Context, client *ssh.Client) *docker.ContainersInfo
+}
+
+// remoteServicesCollector — контракт сбора systemd-сервисов удалённого
+// сервера. Реализуется *remotesystemd.Collector. nil допустим.
+type remoteServicesCollector interface {
+	Collect(ctx context.Context, client *ssh.Client) *systemd.ServicesInfo
 }
 
 // serverKeyProvider — контракт получения публичного ключа приложения.
 // Реализуется *sshkey.Manager.
 type serverKeyProvider interface {
 	Check(ctx context.Context) (sshkey.KeyInfo, error)
+}
+
+// geoResolver — контракт резолвинга страны по IP. Реализуется *geo.Resolver.
+// Допускается nil — тогда гео-факты просто не заполняются (не ошибка).
+type geoResolver interface {
+	Lookup(ip string) (geo.CountryInfo, bool)
 }
 
 const (
@@ -38,12 +74,16 @@ const (
 )
 
 type ServerService struct {
-	repo      domain.ServerRepository
-	cipher    *crypto.Cipher
-	connector serverConnector
-	keys      serverKeyProvider
-	logger    *slog.Logger
-	clock     func() time.Time
+	repo             domain.ServerRepository
+	cipher           *crypto.Cipher
+	connector        serverConnector
+	keys             serverKeyProvider
+	geo              geoResolver               // nil допустим
+	systemRemote     remoteSystemCollector     // nil допустим
+	containersRemote remoteContainersCollector // nil допустим
+	servicesRemote   remoteServicesCollector   // nil допустим
+	logger           *slog.Logger
+	clock            func() time.Time
 }
 
 func NewServerService(
@@ -51,15 +91,23 @@ func NewServerService(
 	cipher *crypto.Cipher,
 	connector serverConnector,
 	keys serverKeyProvider,
+	geoRes geoResolver,
+	systemRemote remoteSystemCollector,
+	containersRemote remoteContainersCollector,
+	servicesRemote remoteServicesCollector,
 	logger *slog.Logger,
 ) *ServerService {
 	return &ServerService{
-		repo:      repo,
-		cipher:    cipher,
-		connector: connector,
-		keys:      keys,
-		logger:    logger,
-		clock:     time.Now,
+		repo:             repo,
+		cipher:           cipher,
+		connector:        connector,
+		keys:             keys,
+		geo:              geoRes,
+		systemRemote:     systemRemote,
+		containersRemote: containersRemote,
+		servicesRemote:   servicesRemote,
+		logger:           logger,
+		clock:            time.Now,
 	}
 }
 
@@ -103,10 +151,19 @@ func (s *ServerService) RemoteConnect(ctx context.Context, id uuid.UUID) (*Remot
 			Arch:           res.Facts.Arch,
 			KernelVersion:  res.Facts.KernelVersion,
 			RemoteHostname: res.Facts.Hostname,
+			RemotePublicIP: res.Facts.PublicIP,
 		}
 		if res.Facts.CPUCores > 0 {
 			cores := res.Facts.CPUCores
 			facts.CPUCores = &cores
+		}
+		// Резолвим страну ЛОКАЛЬНО по публичному IP, увиденному сервером.
+		// Если ip пустой/приватный/нет в базе — поля остаются пустыми (ok=false).
+		if s.geo != nil && facts.RemotePublicIP != "" {
+			if ci, ok := s.geo.Lookup(facts.RemotePublicIP); ok {
+				facts.CountryCode = ci.Code
+				facts.Country = ci.Name
+			}
 		}
 		if ferr := s.repo.UpdateFacts(ctx, id, facts); ferr != nil {
 			s.logger.Warn("update server facts", "err", ferr, "server_id", id)
@@ -116,6 +173,9 @@ func (s *ServerService) RemoteConnect(ctx context.Context, id uuid.UUID) (*Remot
 		out.KernelVersion = res.Facts.KernelVersion
 		out.Arch = res.Facts.Arch
 		out.CPUCores = facts.CPUCores
+		out.RemotePublicIP = facts.RemotePublicIP
+		out.CountryCode = facts.CountryCode
+		out.Country = facts.Country
 	}
 
 	s.logger.Info("server remote connect", "server_id", id, "status", res.Status, "method", res.Method, "connected", res.Connected)
@@ -157,6 +217,189 @@ func (s *ServerService) RemotePing(ctx context.Context, id uuid.UUID) (*RemotePi
 		IsActive:  active,
 		CheckedAt: now,
 	}, nil
+}
+
+// RemoteSystemInfo открывает SSH-соединение и собирает подробный снимок
+// удалённого сервера (host/cpu/memory/disks/network/docker). По форме данных
+// эндпоинт максимально близок к локальному /api/system/main, чтобы фронт
+// рендерил их теми же компонентами.
+//
+// Недоступность сервера / ошибки auth — НЕ ошибка метода: возвращается
+// Output с Connected=false и пустым System; фронт отрисует ту же ошибку,
+// что и в /remote/connect.
+//
+// is_active НЕ трогаем — этот метод диагностический, не управляющий.
+func (s *ServerService) RemoteSystemInfo(ctx context.Context, id uuid.UUID) (*RemoteSystemInfoOutput, error) {
+	if s.systemRemote == nil {
+		return nil, fmt.Errorf("server: remote system collector is not configured")
+	}
+
+	// Для system/main нам нужно ещё и время handshake'а — поэтому считаем
+	// латентность вручную вокруг openRemoteSession, не используя его наполовину.
+	srv, password, err := s.loadServerForSSH(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	dialStart := s.clock()
+	client, method, failRes := s.connector.Dial(ctx, sshclient.Target{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.Username,
+		Password: password,
+	})
+	if client == nil {
+		now := s.clock()
+		if uerr := s.repo.UpdateConnectionStatus(ctx, id, failRes.Status, failRes.Message, now, nil); uerr != nil {
+			s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+		}
+		s.logger.Info("server remote system info", "server_id", id, "status", failRes.Status, "connected", false)
+		return &RemoteSystemInfoOutput{
+			ID: id, Connected: false, Status: failRes.Status, Message: failRes.Message, CheckedAt: now,
+		}, nil
+	}
+	defer client.Close()
+	latencyMS := s.clock().Sub(dialStart).Milliseconds()
+
+	conn := remoteinfo.ConnectionInfo{
+		Host:      srv.Host,
+		Port:      srv.Port,
+		User:      srv.Username,
+		Method:    method,
+		LatencyMS: latencyMS,
+	}
+	system := s.systemRemote.Collect(ctx, client, conn)
+
+	now := s.clock()
+	// Запишем статус подключения как успех — мы реально вошли и собрали данные.
+	if uerr := s.repo.UpdateConnectionStatus(ctx, id, sshclient.StatusOK, "", now, nil); uerr != nil {
+		s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+	}
+
+	s.logger.Info("server remote system info",
+		"server_id", id, "status", sshclient.StatusOK, "method", method, "connected", true,
+		"sections_with_errors", len(system.Errors), "duration_ms", system.CollectionDurationMS,
+	)
+
+	return &RemoteSystemInfoOutput{
+		ID:        id,
+		Connected: true,
+		Method:    method,
+		Status:    sshclient.StatusOK,
+		Message:   "system info collected via " + method,
+		CheckedAt: now,
+		System:    system,
+	}, nil
+}
+
+// RemoteContainers возвращает список контейнеров с удалённого сервера через
+// SSH + CLI `docker`. JSON-форма ответа эквивалентна /api/system/containers.
+// is_active не трогаем — метод диагностический.
+func (s *ServerService) RemoteContainers(ctx context.Context, id uuid.UUID) (*RemoteContainersOutput, error) {
+	if s.containersRemote == nil {
+		return nil, fmt.Errorf("server: remote containers collector is not configured")
+	}
+	client, method, failRes, err := s.openRemoteSession(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		now := s.clock()
+		s.logger.Info("server remote containers", "server_id", id, "status", failRes.Status, "connected", false)
+		return &RemoteContainersOutput{
+			ID: id, Connected: false, Status: failRes.Status, Message: failRes.Message, CheckedAt: now,
+		}, nil
+	}
+	defer client.Close()
+
+	info := s.containersRemote.Collect(ctx, client)
+
+	now := s.clock()
+	if uerr := s.repo.UpdateConnectionStatus(ctx, id, sshclient.StatusOK, "", now, nil); uerr != nil {
+		s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+	}
+	s.logger.Info("server remote containers",
+		"server_id", id, "status", sshclient.StatusOK, "method", method, "connected", true,
+		"count", info.Count, "available", info.Available,
+	)
+	return &RemoteContainersOutput{
+		ID:         id,
+		Connected:  true,
+		Method:     method,
+		Status:     sshclient.StatusOK,
+		Message:    "containers collected via " + method,
+		CheckedAt:  now,
+		Containers: info,
+	}, nil
+}
+
+// RemoteServices возвращает список systemd-сервисов с удалённого сервера через
+// SSH + CLI `systemctl`. JSON-форма ответа эквивалентна /api/system/services.
+// is_active не трогаем — метод диагностический.
+func (s *ServerService) RemoteServices(ctx context.Context, id uuid.UUID) (*RemoteServicesOutput, error) {
+	if s.servicesRemote == nil {
+		return nil, fmt.Errorf("server: remote services collector is not configured")
+	}
+	client, method, failRes, err := s.openRemoteSession(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		now := s.clock()
+		s.logger.Info("server remote services", "server_id", id, "status", failRes.Status, "connected", false)
+		return &RemoteServicesOutput{
+			ID: id, Connected: false, Status: failRes.Status, Message: failRes.Message, CheckedAt: now,
+		}, nil
+	}
+	defer client.Close()
+
+	info := s.servicesRemote.Collect(ctx, client)
+
+	now := s.clock()
+	if uerr := s.repo.UpdateConnectionStatus(ctx, id, sshclient.StatusOK, "", now, nil); uerr != nil {
+		s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+	}
+	s.logger.Info("server remote services",
+		"server_id", id, "status", sshclient.StatusOK, "method", method, "connected", true,
+		"count", info.Count, "available", info.Available,
+	)
+	return &RemoteServicesOutput{
+		ID:        id,
+		Connected: true,
+		Method:    method,
+		Status:    sshclient.StatusOK,
+		Message:   "services collected via " + method,
+		CheckedAt: now,
+		Services:  info,
+	}, nil
+}
+
+// openRemoteSession — общий хелпер для методов, которым нужно живое SSH-соединение
+// к серверу (RemoteContainers, RemoteServices, RemoteSystemInfo). При проблемах
+// коннекта возвращает (nil, "", failRes, nil) — caller должен сам обернуть в Output
+// со status/message и НЕ пытаться открывать сессии.
+//
+// На уровне ошибок: метод возвращает ошибку только при проблемах нашей стороны
+// (нет сервера в БД, шифрование/конфиг). Сетевые/auth — это failRes.
+func (s *ServerService) openRemoteSession(ctx context.Context, id uuid.UUID) (*ssh.Client, string, sshclient.Result, error) {
+	srv, password, err := s.loadServerForSSH(ctx, id)
+	if err != nil {
+		return nil, "", sshclient.Result{}, err
+	}
+	client, method, failRes := s.connector.Dial(ctx, sshclient.Target{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.Username,
+		Password: password,
+	})
+	if client == nil {
+		// Сетевые проблемы / auth fail — фиксируем как у /remote/connect.
+		now := s.clock()
+		if uerr := s.repo.UpdateConnectionStatus(ctx, id, failRes.Status, failRes.Message, now, nil); uerr != nil {
+			s.logger.Warn("update server connection status", "err", uerr, "server_id", id)
+		}
+		return nil, "", failRes, nil
+	}
+	return client, method, failRes, nil
 }
 
 // InstallSSHKey устанавливает наш SSH-ключ приложения в authorized_keys
@@ -499,6 +742,9 @@ func toServerView(s *domain.Server) *ServerView {
 		CPUCores:         s.CPUCores,
 		MemoryTotalBytes: s.MemoryTotalBytes,
 		DiskTotalBytes:   s.DiskTotalBytes,
+		RemotePublicIP:   s.RemotePublicIP,
+		CountryCode:      s.CountryCode,
+		Country:          s.Country,
 		HasPassword:      s.PasswordEncrypted != "",
 		HasPrivateKey:    s.PrivateKeyEncrypted != "",
 		IsActive:         s.IsActive,

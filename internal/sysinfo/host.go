@@ -26,11 +26,16 @@ func (c *Collector) collectHost(ctx context.Context) (HostInfo, error) {
 		info.Hostname = hostname
 	}
 
+	publicIP := c.resolvePublicIP(ctx)
+	countryCode, country := c.resolveCountry(publicIP)
+
 	out := HostInfo{
 		Hostname:             info.Hostname,
 		FQDN:                 lookupFQDN(info.Hostname),
 		PrimaryIP:            outboundIP(),
-		PublicIP:             c.resolvePublicIP(ctx),
+		PublicIP:             publicIP,
+		CountryCode:          countryCode,
+		Country:              country,
 		OS:                   info.OS,
 		Platform:             info.Platform,
 		PlatformFamily:       info.PlatformFamily,
@@ -110,6 +115,21 @@ func (c *Collector) resolvePublicIP(ctx context.Context) string {
 		c.ipMu.Unlock()
 	}
 	return ip
+}
+
+// resolveCountry — резолв страны по уже определённому публичному IP через
+// встроенную mmdb-базу (пакет internal/geo). Полностью локально, без сетевых
+// вызовов. Пустые результаты при отсутствии резолвера, пустом IP или приватных
+// диапазонах — не ошибка.
+func (c *Collector) resolveCountry(publicIP string) (code, name string) {
+	if c.geo == nil || publicIP == "" {
+		return "", ""
+	}
+	ci, ok := c.geo.Lookup(publicIP)
+	if !ok {
+		return "", ""
+	}
+	return ci.Code, ci.Name
 }
 
 // fetchPublicIP — best-effort внешний запрос публичного IP. Жёсткий таймаут,

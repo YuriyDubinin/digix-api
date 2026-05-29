@@ -26,6 +26,9 @@ type ServerService interface {
 	RemoteConnect(ctx context.Context, id uuid.UUID) (*service.RemoteConnectOutput, error)
 	RemotePing(ctx context.Context, id uuid.UUID) (*service.RemotePingOutput, error)
 	InstallSSHKey(ctx context.Context, id uuid.UUID) (*service.InstallSSHKeyOutput, error)
+	RemoteSystemInfo(ctx context.Context, id uuid.UUID) (*service.RemoteSystemInfoOutput, error)
+	RemoteContainers(ctx context.Context, id uuid.UUID) (*service.RemoteContainersOutput, error)
+	RemoteServices(ctx context.Context, id uuid.UUID) (*service.RemoteServicesOutput, error)
 }
 
 type ServerHandler struct {
@@ -174,6 +177,57 @@ func (h *ServerHandler) RemotePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, dto.FromRemotePingOutput(out))
+}
+
+// RemoteSystemMain — POST /api/servers/remote/system/main.
+// Открывает SSH-соединение к серверу и собирает подробный снимок состояния
+// удалённой машины (host/cpu/memory/disks/network/docker) — формат идентичен
+// локальному /api/system/main, чтобы фронт переиспользовал те же компоненты.
+// Сетевые сбои / отказ auth — 200 с connected=false (как /remote/connect).
+func (h *ServerHandler) RemoteSystemMain(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.decodeRemoteID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.service.RemoteSystemInfo(r.Context(), id)
+	if err != nil {
+		h.writeRemoteError(w, r, err, "remote system info")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, dto.FromRemoteSystemInfoOutput(out))
+}
+
+// RemoteSystemContainers — POST /api/servers/remote/system/containers.
+// Список Docker-контейнеров удалённого сервера. Структура `containers` идентична
+// /api/system/containers — фронт рендерит теми же компонентами.
+// Сетевые сбои / отказ auth — 200 с connected=false.
+func (h *ServerHandler) RemoteSystemContainers(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.decodeRemoteID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.service.RemoteContainers(r.Context(), id)
+	if err != nil {
+		h.writeRemoteError(w, r, err, "remote system containers")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, dto.FromRemoteContainersOutput(out))
+}
+
+// RemoteSystemServices — POST /api/servers/remote/system/services.
+// Список systemd-сервисов (.service unit'ов) удалённого сервера. Структура
+// `services` идентична /api/system/services. Сетевые/auth-сбои — 200 с connected=false.
+func (h *ServerHandler) RemoteSystemServices(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.decodeRemoteID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.service.RemoteServices(r.Context(), id)
+	if err != nil {
+		h.writeRemoteError(w, r, err, "remote system services")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, dto.FromRemoteServicesOutput(out))
 }
 
 // InstallKey — POST /api/servers/remote/install-ssh.

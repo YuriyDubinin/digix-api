@@ -10,8 +10,12 @@ import (
 
 	"github.com/YuriyDubinin/dijex-api/internal/config"
 	"github.com/YuriyDubinin/dijex-api/internal/docker"
+	"github.com/YuriyDubinin/dijex-api/internal/geo"
 	"github.com/YuriyDubinin/dijex-api/internal/notifier/telegram"
 	"github.com/YuriyDubinin/dijex-api/internal/registryclient"
+	"github.com/YuriyDubinin/dijex-api/internal/remotedocker"
+	"github.com/YuriyDubinin/dijex-api/internal/remoteinfo"
+	"github.com/YuriyDubinin/dijex-api/internal/remotesystemd"
 	"github.com/YuriyDubinin/dijex-api/internal/repository/postgres"
 	"github.com/YuriyDubinin/dijex-api/internal/service"
 	"github.com/YuriyDubinin/dijex-api/internal/sshclient"
@@ -92,8 +96,28 @@ func main() {
 
 	sshManager := sshkey.NewManager(cfg.SSH.KeyPath)
 	sshConnector := sshclient.NewConnector(sshManager)
+
+	// Geo-резолвер: одна mmdb-база на весь сервис. Используется sysinfo (для
+	// своей машины) и serverService (для удалённых серверов через ServerFacts).
+	// Если файл базы повреждён/пуст — это ошибка сборки, не запускаемся вообще.
+	geoResolver, err := geo.NewResolver()
+	if err != nil {
+		log.Error("init geo resolver", "err", err)
+		os.Exit(1)
+	}
+	defer geoResolver.Close()
+
+	// Коллекторы для удалённых /system/* эндпоинтов (через тот же SSH-стек).
+	remoteSystemCollector := remoteinfo.NewCollector(geoResolver)
+	remoteContainersCollector := remotedocker.NewCollector()
+	remoteServicesCollector := remotesystemd.NewCollector()
+
 	// Тот же шифр используем для секретов серверов (один app-ключ на все секреты).
-	serverService := service.NewServerService(serverRepo, registryCipher, sshConnector, sshManager, log)
+	serverService := service.NewServerService(
+		serverRepo, registryCipher, sshConnector, sshManager, geoResolver,
+		remoteSystemCollector, remoteContainersCollector, remoteServicesCollector,
+		log,
+	)
 
 	v := validator.New()
 
@@ -107,7 +131,7 @@ func main() {
 		StartedAt: startedAt,
 		HTTPPort:  cfg.HTTP.Port,
 		PublicIP:  os.Getenv("HOST_PUBLIC_IP"),
-	}, pool, dockerCollector)
+	}, pool, dockerCollector, geoResolver)
 
 	healthHandler := handler.NewHealthHandler()
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService, v, log)

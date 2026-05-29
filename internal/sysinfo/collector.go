@@ -6,7 +6,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/YuriyDubinin/dijex-api/internal/geo"
 )
+
+// geoResolver — узкий контракт резолва страны по IP. Реализуется *geo.Resolver.
+// nil допустим — host.country_code/country просто не заполнятся.
+type geoResolver interface {
+	Lookup(ip string) (geo.CountryInfo, bool)
+}
 
 // Collector собирает данные о машине. Создаётся один раз в main.go,
 // передаётся в HTTP-хендлер. Thread-safe.
@@ -14,6 +22,7 @@ type Collector struct {
 	app           AppMeta
 	pool          *pgxpool.Pool
 	dockerVersion dockerVersionProvider // nil допустим — секция docker частично пустая
+	geo           geoResolver           // nil допустим — country* поля просто не заполнятся
 
 	// errMu защищает добавление в SystemInfo.Errors из параллельных горутин.
 	errMu sync.Mutex
@@ -25,11 +34,12 @@ type Collector struct {
 	publicResolved bool
 }
 
-func NewCollector(app AppMeta, pool *pgxpool.Pool, docker dockerVersionProvider) *Collector {
+func NewCollector(app AppMeta, pool *pgxpool.Pool, docker dockerVersionProvider, geoRes geoResolver) *Collector {
 	return &Collector{
 		app:           app,
 		pool:          pool,
 		dockerVersion: docker,
+		geo:           geoRes,
 	}
 }
 

@@ -30,6 +30,7 @@ const serverColumns = `
 	COALESCE(description, ''), environment::text, COALESCE(provider, ''), COALESCE(location, ''), COALESCE(tags, '{}'),
 	COALESCE(os, ''), COALESCE(os_version, ''), COALESCE(arch, ''), COALESCE(kernel_version, ''), COALESCE(remote_hostname, ''),
 	cpu_cores, memory_total_bytes, disk_total_bytes,
+	COALESCE(remote_public_ip, ''), COALESCE(country_code, ''), COALESCE(country, ''),
 	is_active, ssh_key_installed, last_checked_at, COALESCE(last_status, ''), COALESCE(last_error, ''),
 	created_at, updated_at
 `
@@ -42,6 +43,7 @@ func scanServer(row pgx.Row) (*domain.Server, error) {
 		&s.Description, &s.Environment, &s.Provider, &s.Location, &s.Tags,
 		&s.OS, &s.OSVersion, &s.Arch, &s.KernelVersion, &s.RemoteHostname,
 		&s.CPUCores, &s.MemoryTotalBytes, &s.DiskTotalBytes,
+		&s.RemotePublicIP, &s.CountryCode, &s.Country,
 		&s.IsActive, &s.SSHKeyInstalled, &s.LastCheckedAt, &s.LastStatus, &s.LastError,
 		&s.CreatedAt, &s.UpdatedAt,
 	)
@@ -167,18 +169,27 @@ func (r *ServerRepository) UpdateConnectionStatus(ctx context.Context, id uuid.U
 }
 
 // UpdateFacts сохраняет факты о сервере (пустые строки → NULL, cpu_cores как есть).
+// Гео-поля (remote_public_ip / country_code / country) обновляются вместе с
+// остальными — они тоже факты, собираемые при /api/servers/remote/connect.
 func (r *ServerRepository) UpdateFacts(ctx context.Context, id uuid.UUID, f domain.ServerFacts) error {
 	const query = `
 		UPDATE servers
-		SET os              = NULLIF($1, ''),
-		    os_version      = NULLIF($2, ''),
-		    arch            = NULLIF($3, ''),
-		    kernel_version  = NULLIF($4, ''),
-		    remote_hostname = NULLIF($5, ''),
-		    cpu_cores       = $6
-		WHERE id = $7 AND deleted_at IS NULL
+		SET os               = NULLIF($1, ''),
+		    os_version       = NULLIF($2, ''),
+		    arch             = NULLIF($3, ''),
+		    kernel_version   = NULLIF($4, ''),
+		    remote_hostname  = NULLIF($5, ''),
+		    cpu_cores        = $6,
+		    remote_public_ip = NULLIF($7, ''),
+		    country_code     = NULLIF($8, ''),
+		    country          = NULLIF($9, '')
+		WHERE id = $10 AND deleted_at IS NULL
 	`
-	if _, err := r.pool.Exec(ctx, query, f.OS, f.OSVersion, f.Arch, f.KernelVersion, f.RemoteHostname, f.CPUCores, id); err != nil {
+	if _, err := r.pool.Exec(ctx, query,
+		f.OS, f.OSVersion, f.Arch, f.KernelVersion, f.RemoteHostname, f.CPUCores,
+		f.RemotePublicIP, f.CountryCode, f.Country,
+		id,
+	); err != nil {
 		return fmt.Errorf("postgres: update server facts %s: %w", id, err)
 	}
 	return nil

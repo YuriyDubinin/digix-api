@@ -11,6 +11,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.4
+	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/shirou/gopsutil/v4 v4.26.4
 	golang.org/x/crypto v0.49.0
 	golang.org/x/sync v0.20.0

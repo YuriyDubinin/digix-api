@@ -57,6 +57,8 @@ type HostInfo struct {
 	FQDN                 string    `json:"fqdn,omitempty"`
 	PrimaryIP            string    `json:"primary_ip,omitempty"` // основной исходящий IP машины/контейнера
 	PublicIP             string    `json:"public_ip,omitempty"`  // публичный (внешний) IP сервера
+	CountryCode          string    `json:"country_code,omitempty"` // ISO 3166-1 alpha-2 по public_ip
+	Country              string    `json:"country,omitempty"`      // английское имя страны
 	OS                   string    `json:"os"`               // "linux", "darwin", "windows"
 	Platform             string    `json:"platform"`         // "ubuntu", "macOS"
 	PlatformFamily       string    `json:"platform_family"`  // "debian"

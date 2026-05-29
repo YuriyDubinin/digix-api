@@ -38,6 +38,12 @@ type Server struct {
 	MemoryTotalBytes *int64
 	DiskTotalBytes   *int64
 
+	// Гео-факты: публичный IP, увиденный самим сервером (источник для lookup'а),
+	// и резолв страны по нему. Заполняются в /api/servers/remote/connect.
+	RemotePublicIP string
+	CountryCode    string // ISO 3166-1 alpha-2: RU, US, DE, ...
+	Country        string // английское имя страны из mmdb
+
 	IsActive        bool
 	SSHKeyInstalled bool // наш SSH-ключ приложения добавлен в authorized_keys этого сервера
 	LastCheckedAt   *time.Time
@@ -107,6 +113,13 @@ type ServerFacts struct {
 	KernelVersion  string
 	RemoteHostname string
 	CPUCores       *int
+
+	// Гео-факты. RemotePublicIP — то, что увидел сам сервер о себе наружу
+	// (через api.ipify.org). CountryCode/Country — резолв этого IP по
+	// встроенной mmdb (выполняется внутри сервиса, не на удалённом хосте).
+	RemotePublicIP string
+	CountryCode    string
+	Country        string
 }
 
 // ServerListFilter — параметры выборки списка серверов.
